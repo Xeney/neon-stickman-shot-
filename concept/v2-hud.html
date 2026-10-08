@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NEON STICKMAN SHOT v2.0 — HUD Concept</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1600px; height: 900px; overflow: hidden;
+        font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #eaf2ff; }
+
+    .bg { position: fixed; inset: 0;
+        background: url('../screenshots/hud.png') center / cover;
+        filter: blur(2px) brightness(.72) saturate(1.15); transform: scale(1.03); }
+    .tint { position: fixed; inset: 0;
+        background: radial-gradient(circle at 50% 44%, transparent 42%, rgba(2,6,14,.6) 100%); }
+
+    .glass { background: rgba(10,15,26,.72);
+        backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255,255,255,.09);
+        box-shadow: 0 10px 34px rgba(0,0,0,.45); }
+
+    /* ===== верх-центр: матч-бар ===== */
+    .matchbar { position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+        display: flex; align-items: stretch; height: 58px;
+        border-radius: 999px; overflow: hidden; }
+    .team { display: flex; align-items: center; gap: 14px; padding: 0 26px; }
+    .team.blue { background: linear-gradient(135deg, rgba(77,163,255,.28), rgba(77,163,255,.06)); }
+    .team.red  { background: linear-gradient(135deg, rgba(255,90,90,.06), rgba(255,90,90,.28)); }
+    .tname { font-size: 11px; letter-spacing: 3px; font-weight: 800; }
+    .team.blue .tname { color: #9cc8ff; }
+    .team.red .tname  { color: #ffb1b1; }
+    .score { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .team.blue .score { color: #6cb2ff; text-shadow: 0 0 18px rgba(77,163,255,.8); }
+    .team.red .score  { color: #ff7a7a; text-shadow: 0 0 18px rgba(255,90,90,.8); }
+    .mid { display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 0 30px; background: rgba(6,10,20,.6); border-left: 1px solid rgba(255,255,255,.07);
+        border-right: 1px solid rgba(255,255,255,.07); }
+    .timer { font-size: 24px; font-weight: 900; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+    .mode { font-size: 9px; letter-spacing: 3px; color: #8fa3c0; font-weight: 800; margin-top: 2px; }
+
+    /* ===== точки A/B/C ===== */
+    .objectives { position: fixed; top: 88px; left: 50%; transform: translateX(-50%);
+        display: flex; gap: 12px; }
+    .obj { width: 46px; height: 46px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 17px; font-weight: 900; position: relative;
+        background: rgba(8,12,22,.78); border: 2px solid rgba(255,255,255,.15);
+        backdrop-filter: blur(10px); }
+    .obj.blue { border-color: #4da3ff; color: #9cc8ff;
+        box-shadow: 0 0 20px rgba(77,163,255,.55), inset 0 0 14px rgba(77,163,255,.25); }
+    .obj.red { border-color: #ff5a5a; color: #ffb1b1;
+        box-shadow: 0 0 20px rgba(255,90,90,.55), inset 0 0 14px rgba(255,90,90,.25); }
+    .obj.contested { border-color: #4da3ff; color: #cfe3ff;
+        animation: pulseObj 0.9s ease-in-out infinite; }
+    @keyframes pulseObj {
+        0%, 100% { border-color: #4da3ff; box-shadow: 0 0 18px rgba(77,163,255,.55); }
+        50%      { border-color: #ff5a5a; box-shadow: 0 0 18px rgba(255,90,90,.55); }
+    }
+
+    /* ===== киллстрики (под миникартой) ===== */
+    .streaks { position: fixed; top: 284px; left: 20px; width: 248px;
+        display: flex; flex-direction: column; gap: 6px; }
+    .ks { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 13px;
+        border-radius: 10px; font-size: 10px; font-weight: 900; letter-spacing: 1.5px;
+        background: rgba(10,15,26,.72); border: 1px solid rgba(255,255,255,.08);
+        backdrop-filter: blur(12px); color: #8fa3c0; }
+    .ks .ico { width: 16px; height: 16px; border-radius: 5px; display: flex;
+        align-items: center; justify-content: center; font-size: 10px; }
+    .ks.active { border-color: rgba(0,229,255,.6); color: #fff;
+        box-shadow: 0 0 20px rgba(0,229,255,.35); }
+    .ks.active .ico { background: #00e5ff; color: #06202a; }
+    .ks.active .cd { color: #7df3ff; font-variant-numeric: tabular-nums; }
+    .ks.ready { border-color: rgba(255,179,71,.55); color: #ffd9a3; }
+    .ks.ready .ico { background: #ffb347; color: #241503; }
+    .ks .prog { color: #5c6f8c; font-variant-numeric: tabular-nums; }
+
+    /* ===== миникарта ===== */
+    .minimap { position: fixed; top: 20px; left: 20px; width: 248px; height: 248px;
+        border-radius: 18px; overflow: hidden; }
+    .mm-grid { position: absolute; inset: 0; opacity: .5;
+        background-image: linear-gradient(rgba(120,160,220,.14) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(120,160,220,.14) 1px, transparent 1px);
+        background-size: 31px 31px; }
+    .mm-tag { position: absolute; top: 10px; left: 12px; display: flex; align-items: center; gap: 7px;
+        padding: 4px 10px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: 2px;
+        background: rgba(0,229,255,.16); border: 1px solid rgba(0,229,255,.55); color: #aef4ff; }
+    .mm-tag .dot { width: 6px; height: 6px; border-radius: 50%; background: #00e5ff;
+        box-shadow: 0 0 8px #00e5ff; animation: blink 1s infinite; }
+    @keyframes blink { 50% { opacity: .35; } }
+    .mm-obj { position: absolute; width: 22px; height: 22px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 10px; font-weight: 900; background: rgba(6,10,20,.85); }
+    .mm-obj.blue { border: 2px solid #4da3ff; color: #9cc8ff; }
+    .mm-obj.red  { border: 2px solid #ff5a5a; color: #ffb1b1; }
+    .mm-enemy { position: absolute; width: 11px; height: 11px; border-radius: 50%;
+        background: #ff5a5a; box-shadow: 0 0 12px #ff5a5a; animation: blink 1.2s infinite; }
+    .mm-ally { position: absolute; width: 9px; height: 9px; border-radius: 50%;
+        background: #4da3ff; box-shadow: 0 0 8px rgba(77,163,255,.8); }
+    .mm-me { position: absolute; width: 0; height: 0;
+        border-left: 7px solid transparent; border-right: 7px solid transparent;
+        border-bottom: 16px solid #ffffff; filter: drop-shadow(0 0 6px rgba(255,255,255,.8)); }
+    .mm-foot { position: absolute; left: 0; right: 0; bottom: 0; height: 24px;
+        display: flex; align-items: center; justify-content: space-between; padding: 0 12px;
+        background: rgba(5,9,18,.85); font-size: 8px; font-weight: 800; letter-spacing: 1px;
+        color: #7d90ab; white-space: nowrap; }
+    .mm-foot b { color: #aef4ff; }
+
+    /* ===== киллфид ===== */
+    .killfeed { position: fixed; top: 20px; right: 20px; display: flex;
+        flex-direction: column; gap: 6px; align-items: flex-end; }
+    .kf { display: flex; align-items: center; gap: 8px; padding: 7px 13px;
+        border-radius: 10px; font-size: 12px; font-weight: 600;
+        background: rgba(10,15,26,.72); backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,.08); border-left: 3px solid #4da3ff; }
+    .kf.red { border-left-color: #ff5a5a; }
+    .kf.gold { border-left-color: #ffd34d; box-shadow: 0 0 18px rgba(255,211,77,.18); }
+    .kf .w { color: #8fa3c0; font-size: 10px; letter-spacing: 1px; }
+    .kf .hs { color: #ffd34d; font-size: 10px; font-weight: 900; letter-spacing: 1px; }
+    .b-blue { color: #7cb8ff; } .b-red { color: #ff8f8f; }
+
+    /* ===== низ-лево: здоровье и снаряжение ===== */
+    .vitals { position: fixed; left: 20px; bottom: 20px; width: 360px;
+        border-radius: 18px; padding: 16px 18px 14px; }
+    .hp-row { display: flex; align-items: baseline; justify-content: space-between; }
+    .hp-label { font-size: 10px; letter-spacing: 3px; font-weight: 900; color: #8fa3c0; }
+    .hp-num { font-size: 40px; font-weight: 900; line-height: 1; color: #fff;
+        text-shadow: 0 0 18px rgba(255,255,255,.3); }
+    .hp-num.low { color: #ff6b6b; text-shadow: 0 0 18px rgba(255,80,80,.7); }
+    .hp-bar { margin-top: 10px; height: 10px; border-radius: 6px; overflow: hidden;
+        background: rgba(255,255,255,.08); position: relative; }
+    .hp-lag { position: absolute; inset: 0; width: 87%; border-radius: 6px;
+        background: rgba(255,224,138,.55); }
+    .hp-fill { position: absolute; inset: 0; width: 63%; border-radius: 6px;
+        background: linear-gradient(90deg, #ff4d4d, #ffb06b);
+        box-shadow: 0 0 12px rgba(255,77,77,.8); }
+    .gear-row { display: flex; gap: 8px; margin-top: 12px; }
+    .gear { flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+        height: 40px; border-radius: 10px; font-size: 11px; font-weight: 900;
+        background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+    .gear .ico { width: 20px; height: 20px; border-radius: 6px; display: flex;
+        align-items: center; justify-content: center; font-size: 11px; }
+    .gear.frag .ico  { background: rgba(255,85,51,.2); color: #ff8a6a; border: 1px solid rgba(255,85,51,.5); }
+    .gear.smoke .ico { background: rgba(191,200,210,.16); color: #d8dee6; border: 1px solid rgba(191,200,210,.4); }
+    .gear.flash .ico { background: rgba(255,211,77,.16); color: #ffd34d; border: 1px solid rgba(255,211,77,.5); }
+    .gear.med .ico   { background: rgba(68,255,136,.16); color: #7dffab; border: 1px solid rgba(68,255,136,.5); }
+    .gear .key { color: #5c6f8c; font-size: 9px; }
+
+    /* ===== низ-право: оружие ===== */
+    .weapon { position: fixed; right: 20px; bottom: 20px; width: 380px;
+        border-radius: 18px; padding: 14px 18px 16px; }
+    .slots { display: flex; gap: 8px; margin-bottom: 12px; }
+    .slot { flex: 1; display: flex; align-items: center; gap: 9px; padding: 8px 12px;
+        border-radius: 10px; background: rgba(255,255,255,.04);
+        border: 1px solid rgba(255,255,255,.07); opacity: .55; }
+    .slot.on { opacity: 1; background: rgba(0,229,255,.1);
+        border-color: rgba(0,229,255,.5); box-shadow: 0 0 18px rgba(0,229,255,.18); }
+    .slot .num { font-size: 10px; font-weight: 900; color: #5c6f8c; }
+    .slot.on .num { color: #00e5ff; }
+    .slot .nm { font-size: 11px; font-weight: 900; letter-spacing: 2px; }
+    .slot.on .nm { color: #d9fbff; }
+    .ammo-row { display: flex; align-items: flex-end; justify-content: space-between; }
+    .ammo { font-size: 46px; font-weight: 900; line-height: .9;
+        color: #00e5ff; text-shadow: 0 0 20px rgba(0,229,255,.6);
+        font-variant-numeric: tabular-nums; }
+    .ammo small { font-size: 16px; color: #4a5c78; }
+    .mode-tag { padding: 4px 10px; border-radius: 8px; font-size: 9px; font-weight: 900;
+        letter-spacing: 2px; color: #ffb347; border: 1px solid rgba(255,179,71,.4);
+        background: rgba(255,179,71,.08); }
+    .pips { display: flex; gap: 3px; justify-content: flex-end; margin-top: 10px; }
+    .pip { width: 5px; height: 22px; border-radius: 2px; background: rgba(255,255,255,.1); }
+    .pip.on { background: linear-gradient(180deg, #00e5ff, #0088ff);
+        box-shadow: 0 0 7px rgba(0,229,255,.9); }
+
+    /* ===== центр: прицел и подтверждение ===== */
+    .crosshair { position: fixed; left: 50%; top: 47%; transform: translate(-50%,-50%);
+        width: 26px; height: 26px; }
+    .crosshair i { position: absolute; background: #7df3ff; box-shadow: 0 0 6px rgba(0,229,255,.9); }
+    .crosshair .v1 { left: 50%; top: 0; width: 2px; height: 8px; margin-left: -1px; }
+    .crosshair .v2 { left: 50%; bottom: 0; width: 2px; height: 8px; margin-left: -1px; }
+    .crosshair .h1 { top: 50%; left: 0; height: 2px; width: 8px; margin-top: -1px; }
+    .crosshair .h2 { top: 50%; right: 0; height: 2px; width: 8px; margin-top: -1px; }
+    .crosshair .dot { left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px;
+        border-radius: 50%; }
+
+    .confirm { position: fixed; left: 50%; top: 55%; transform: translateX(-50%);
+        display: flex; align-items: center; gap: 10px; padding: 8px 18px;
+        border-radius: 999px; background: rgba(10,15,26,.7);
+        border: 1px solid rgba(255,211,77,.45); box-shadow: 0 0 26px rgba(255,211,77,.2);
+        backdrop-filter: blur(10px); font-size: 14px; font-weight: 900; letter-spacing: 1.5px; }
+    .confirm .sk { color: #ffd34d; font-size: 17px; }
+    .confirm .pts { color: #ffd34d; }
+    .confirm .hs-tag { padding: 3px 8px; border-radius: 6px; font-size: 9px; letter-spacing: 2px;
+        background: rgba(255,211,77,.15); border: 1px solid rgba(255,211,77,.5); color: #ffd34d; }
+
+    /* ===== индикатор урона ===== */
+    .dmg-arc { position: fixed; left: 340px; top: 44%; width: 150px; height: 150px; opacity: .95; }
+
+    /* ===== событие точки ===== */
+    .event { position: fixed; left: 50%; bottom: 118px; transform: translateX(-50%);
+        display: flex; align-items: center; gap: 9px; padding: 8px 18px; border-radius: 999px;
+        background: rgba(10,15,26,.75); backdrop-filter: blur(12px);
+        border: 1px solid rgba(77,163,255,.5); box-shadow: 0 0 22px rgba(77,163,255,.2);
+        font-size: 11px; font-weight: 900; letter-spacing: 2px; }
+    .event .bdot { width: 9px; height: 9px; border-radius: 50%; background: #4da3ff;
+        box-shadow: 0 0 9px #4da3ff; }
+
+    .lowhp { position: fixed; inset: 0; pointer-events: none;
+        background: radial-gradient(circle at center, transparent 52%, rgba(255,30,30,.34) 100%); }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="tint"></div>
+<div class="lowhp"></div>
+
+<!-- матч-бар -->
+<div class="matchbar glass">
+    <div class="team blue"><span class="tname">СИНИЕ</span><span class="score">42</span></div>
+    <div class="mid"><div class="timer">3:24</div><div class="mode">ДОМИНИРОВАНИЕ</div></div>
+    <div class="team red"><span class="score">38</span><span class="tname">КРАСНЫЕ</span></div>
+</div>
+
+<!-- точки -->
+<div class="objectives">
+    <div class="obj blue">A</div>
+    <div class="obj contested">B</div>
+    <div class="obj red">C</div>
+</div>
+
+<!-- киллстрики -->
+<div class="streaks">
+    <div class="ks active"><span class="ico">◉</span>UAV <span class="cd">8с</span></div>
+    <div class="ks ready"><span class="ico">✷</span>АРТОБСТРЕЛ <span class="cd">ГОТОВ</span></div>
+    <div class="ks"><span class="ico">▲</span>ДРОН <span class="prog">3/7</span></div>
+</div>
+
+<!-- миникарта -->
+<div class="minimap glass">
+    <div class="mm-grid"></div>
+    <div class="mm-tag"><span class="dot"></span>UAV · 8с</div>
+    <div class="mm-obj blue" style="left:56px; top:64px;">A</div>
+    <div class="mm-obj red" style="left:178px; top:180px;">C</div>
+    <div class="mm-obj blue" style="left:118px; top:122px; border-color:#cfe3ff;">B</div>
+    <div class="mm-enemy" style="left:70px; top:150px;"></div>
+    <div class="mm-enemy" style="left:196px; top:74px;"></div>
+    <div class="mm-enemy" style="left:150px; top:190px;"></div>
+    <div class="mm-ally" style="left:110px; top:160px;"></div>
+    <div class="mm-ally" style="left:88px; top:110px;"></div>
+    <div class="mm-me" style="left:120px; top:96px;"></div>
+    <div class="mm-foot"><span>СЕКТОР <b>B</b> · 62%</span><span>144 FPS · 12 MS</span></div>
+</div>
+
+<!-- киллфид -->
+<div class="killfeed">
+    <div class="kf gold">Боец <span class="w">RIFLE</span> ⟶ Ash64 <span class="hs">ХЕДШОТ</span></div>
+    <div class="kf"><span class="b-blue">Rex11</span> <span class="w">SMG</span> ⟶ <span class="b-red">Vex3</span></div>
+    <div class="kf red"><span class="b-red">Nyx77</span> <span class="w">SHOTGUN</span> ⟶ <span class="b-blue">Боец</span></div>
+</div>
+
+<!-- здоровье и снаряжение -->
+<div class="vitals glass">
+    <div class="hp-row">
+        <span class="hp-label">ЗДОРОВЬЕ</span>
+        <span class="hp-num low">63</span>
+    </div>
+    <div class="hp-bar">
+        <div class="hp-lag"></div>
+        <div class="hp-fill"></div>
+    </div>
+    <div class="gear-row">
+        <div class="gear frag"><span class="ico">Ф</span>2 <span class="key">G</span></div>
+        <div class="gear smoke"><span class="ico">Д</span>1</div>
+        <div class="gear flash"><span class="ico">С</span>0</div>
+        <div class="gear med"><span class="ico">✚</span>1 <span class="key">F</span></div>
+    </div>
+</div>
+
+<!-- оружие -->
+<div class="weapon glass">
+    <div class="slots">
+        <div class="slot on"><span class="num">1</span><span class="nm">RIFLE</span></div>
+        <div class="slot"><span class="num">2</span><span class="nm">REVOLVER</span></div>
+    </div>
+    <div class="ammo-row">
+        <div class="ammo">27<small> / 90</small></div>
+        <div class="mode-tag">АВТО</div>
+    </div>
+    <div class="pips">
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+        <i class="pip on"></i><i class="pip on"></i><i class="pip on"></i>
+    </div>
+</div>
+
+<!-- прицел и подтверждение -->
+<div class="crosshair">
+    <i class="v1"></i><i class="v2"></i><i class="h1"></i><i class="h2"></i><i class="dot"></i>
+</div>
+<div class="confirm"><span class="sk">⌖</span>УСТРАНЕНИЕ <span class="pts">+100</span><span class="hs-tag">ХЕДШОТ</span></div>
+
+<!-- индикатор урона -->
+<svg class="dmg-arc" viewBox="0 0 150 150">
+    <path d="M 30 22 A 68 68 0 0 1 120 22" fill="none"
+          stroke="rgba(255,80,80,.95)" stroke-width="7" stroke-linecap="round"
+          style="filter: drop-shadow(0 0 8px rgba(255,80,80,.9));"/>
+</svg>
+
+<!-- событие -->
+<div class="event"><span class="bdot"></span>ТОЧКА A ЗАХВАЧЕНА — СИНИЕ +1</div>
+</body>
+</html>

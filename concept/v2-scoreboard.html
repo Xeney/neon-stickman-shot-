@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NEON STICKMAN SHOT v2.0 — Scoreboard Concept</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1600px; height: 900px; overflow: hidden;
+        font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #eaf2ff; }
+
+    .bg { position: fixed; inset: 0;
+        background: url('../screenshots/hud.png') center / cover;
+        filter: blur(7px) brightness(.35) saturate(1.1); transform: scale(1.05); }
+    .tint { position: fixed; inset: 0;
+        background: radial-gradient(circle at 50% 40%, rgba(6,12,24,.35), rgba(2,5,10,.85)); }
+
+    .board { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        width: 1180px; border-radius: 22px; overflow: hidden;
+        background: rgba(9,14,25,.82);
+        backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+        border: 1px solid rgba(255,255,255,.09);
+        box-shadow: 0 34px 90px rgba(0,0,0,.7), 0 0 80px rgba(0,229,255,.08); }
+
+    .head { display: flex; align-items: center; justify-content: space-between;
+        padding: 20px 28px 16px; border-bottom: 1px solid rgba(255,255,255,.07); }
+    .title { font-size: 20px; font-weight: 900; letter-spacing: 6px;
+        background: linear-gradient(90deg, #00e5ff, #ff2d88);
+        -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .subtitle { margin-top: 4px; font-size: 9px; letter-spacing: 3px; color: #7d90ab; font-weight: 800; }
+    .timer { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    .timer span { font-size: 10px; letter-spacing: 3px; color: #7d90ab; display: block;
+        text-align: center; font-weight: 800; }
+
+    .teams { display: grid; grid-template-columns: 1fr 1fr; }
+    .team-panel { padding: 18px 24px 22px; }
+    .team-panel.blue { border-right: 1px solid rgba(255,255,255,.07);
+        background: linear-gradient(180deg, rgba(77,163,255,.07), transparent 40%); }
+    .team-panel.red { background: linear-gradient(180deg, rgba(255,90,90,.07), transparent 40%); }
+
+    .t-head { display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 14px; }
+    .t-name { display: flex; align-items: center; gap: 10px;
+        font-size: 13px; font-weight: 900; letter-spacing: 3px; }
+    .t-name .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .blue .dot { background: #4da3ff; box-shadow: 0 0 12px #4da3ff; }
+    .red .dot  { background: #ff5a5a; box-shadow: 0 0 12px #ff5a5a; }
+    .t-score { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; }
+    .blue .t-score { color: #6cb2ff; text-shadow: 0 0 18px rgba(77,163,255,.7); }
+    .red .t-score  { color: #ff7a7a; text-shadow: 0 0 18px rgba(255,90,90,.7); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { font-size: 8.5px; letter-spacing: 2px; color: #7d90ab; text-align: left;
+        padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    th.c, td.c { text-align: center; width: 58px; }
+    th.s, td.s { text-align: center; width: 74px; }
+    td { padding: 8px; color: #dbe6f5; font-variant-numeric: tabular-nums;
+        border-bottom: 1px solid rgba(255,255,255,.035); }
+    tr.me td { background: rgba(0,229,255,.09); }
+    tr.mvp td:first-child { position: relative; }
+    tr.mvp .nm { color: #ffd34d; }
+    .star { color: #ffd34d; margin-right: 6px; text-shadow: 0 0 10px rgba(255,211,77,.8); }
+    .nm { font-weight: 700; }
+    .nm .glyph { margin-right: 7px; font-size: 11px; }
+    .g-ghost { color: #9ad8ff; } .g-jugg { color: #ff9a5c; } .g-storm { color: #ffd34d; }
+    .k { color: #ffb347; font-weight: 900; }
+    .d { color: #ff7a9c; }
+    .s { color: #9ad8ff; font-weight: 800; }
+    .ping { color: #7d90ab; font-size: 11px; }
+
+    .foot { display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 28px 18px; border-top: 1px solid rgba(255,255,255,.07);
+        font-size: 9px; letter-spacing: 2px; color: #7d90ab; font-weight: 800; }
+    .foot span { display: inline-flex; align-items: center; gap: 7px; }
+    .lg { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .lg.b { background: #4da3ff; box-shadow: 0 0 7px #4da3ff; }
+    .lg.r { background: #ff5a5a; box-shadow: 0 0 7px #ff5a5a; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="tint"></div>
+
+<div class="board">
+    <div class="head">
+        <div>
+            <div class="title">ТАБЛО БОЯ</div>
+            <div class="subtitle">ДОМИНИРОВАНИЕ · NEON ARENA · 5 VS 5</div>
+        </div>
+        <div class="timer">7:12<span>ДО КОНЦА</span></div>
+    </div>
+
+    <div class="teams">
+        <!-- СИНИЕ -->
+        <div class="team-panel blue">
+            <div class="t-head">
+                <div class="t-name"><span class="dot"></span>СИНИЕ</div>
+                <div class="t-score">42</div>
+            </div>
+            <table>
+                <thead><tr>
+                    <th>БОЕЦ</th><th class="c">У</th><th class="c">С</th><th class="c">З</th>
+                    <th class="s">ОЧКИ</th><th class="c">PING</th>
+                </tr></thead>
+                <tbody>
+                    <tr class="me"><td class="nm"><span class="star">★</span>Боец <span class="ping"></span></td>
+                        <td class="c k">18</td><td class="c d">6</td><td class="c s">3</td>
+                        <td class="s">2 450</td><td class="c ping">12</td></tr>
+                    <tr><td class="nm"><span class="glyph g-storm">●</span>Rex11</td>
+                        <td class="c k">14</td><td class="c d">9</td><td class="c s">2</td>
+                        <td class="s">1 980</td><td class="c ping">8</td></tr>
+                    <tr><td class="nm"><span class="glyph g-ghost">◆</span>Nyx77</td>
+                        <td class="c k">12</td><td class="c d">4</td><td class="c s">1</td>
+                        <td class="s">1 640</td><td class="c ping">21</td></tr>
+                    <tr><td class="nm"><span class="glyph g-jugg">■</span>Volt42</td>
+                        <td class="c k">9</td><td class="c d">11</td><td class="c s">4</td>
+                        <td class="s">1 510</td><td class="c ping">17</td></tr>
+                    <tr><td class="nm"><span class="glyph g-storm">●</span>Spark9</td>
+                        <td class="c k">7</td><td class="c d">8</td><td class="c s">0</td>
+                        <td class="s">980</td><td class="c ping">34</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- КРАСНЫЕ -->
+        <div class="team-panel red">
+            <div class="t-head">
+                <div class="t-name"><span class="dot"></span>КРАСНЫЕ</div>
+                <div class="t-score">38</div>
+            </div>
+            <table>
+                <thead><tr>
+                    <th>БОЕЦ</th><th class="c">У</th><th class="c">С</th><th class="c">З</th>
+                    <th class="s">ОЧКИ</th><th class="c">PING</th>
+                </tr></thead>
+                <tbody>
+                    <tr class="mvp"><td class="nm"><span class="star">★</span><span class="glyph g-ghost">◆</span>Ash64</td>
+                        <td class="c k">21</td><td class="c d">5</td><td class="c s">2</td>
+                        <td class="s">2 780</td><td class="c ping">15</td></tr>
+                    <tr><td class="nm"><span class="glyph g-jugg">■</span>Vex3</td>
+                        <td class="c k">13</td><td class="c d">10</td><td class="c s">3</td>
+                        <td class="s">1 860</td><td class="c ping">22</td></tr>
+                    <tr><td class="nm"><span class="glyph g-storm">●</span>Zed88</td>
+                        <td class="c k">11</td><td class="c d">7</td><td class="c s">1</td>
+                        <td class="s">1 470</td><td class="c ping">29</td></tr>
+                    <tr><td class="nm"><span class="glyph g-storm">●</span>Grit5</td>
+                        <td class="c k">8</td><td class="c d">12</td><td class="c s">2</td>
+                        <td class="s">1 120</td><td class="c ping">41</td></tr>
+                    <tr><td class="nm"><span class="glyph g-ghost">◆</span>Fang21</td>
+                        <td class="c k">6</td><td class="c d">9</td><td class="c s">0</td>
+                        <td class="s">860</td><td class="c ping">52</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="foot">
+        <span><i class="lg b"></i>СИНИЕ — ИГРОКИ</span>
+        <span><i class="lg r"></i>КРАСНЫЕ — ИГРОКИ + БОТЫ</span>
+        <span>◆ ПРИЗРАК · ■ ДЖАГГЕРНАУТ · ● ШТУРМОВИК</span>
+        <span>TAB — ЗАКРЫТЬ</span>
+    </div>
+</div>
+</body>
+</html>

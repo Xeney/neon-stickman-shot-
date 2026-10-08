@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>NEON STICKMAN SHOT v2.0 — Menu Concept</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1600px; height: 900px; overflow: hidden;
+        font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: #eaf2ff; }
+
+    .bg { position: fixed; inset: 0;
+        background: url('../screenshots/hud.png') center / cover;
+        filter: blur(9px) brightness(.42) saturate(1.25); transform: scale(1.06); }
+    .tint { position: fixed; inset: 0;
+        background:
+            radial-gradient(circle at 22% 18%, rgba(0,229,255,.14), transparent 42%),
+            radial-gradient(circle at 82% 88%, rgba(255,45,136,.13), transparent 46%),
+            linear-gradient(180deg, rgba(3,6,12,.55), rgba(3,6,12,.82)); }
+
+    .glass { background: rgba(10,15,26,.7);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255,255,255,.09);
+        box-shadow: 0 14px 44px rgba(0,0,0,.5); }
+
+    /* ===== шапка ===== */
+    .topbar { position: fixed; top: 0; left: 0; right: 0; height: 76px;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 0 34px; background: linear-gradient(180deg, rgba(4,8,15,.85), transparent); }
+    .logo-wrap { display: flex; align-items: baseline; gap: 16px; }
+    .logo { font-size: 26px; font-weight: 900; letter-spacing: 7px;
+        background: linear-gradient(90deg, #00e5ff, #ff2d88, #a56bff, #00e5ff);
+        background-size: 300% 100%; animation: flow 6s linear infinite;
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+        filter: drop-shadow(0 0 20px rgba(255,45,136,.4)); }
+    @keyframes flow { to { background-position: 300% 0; } }
+    .ver { font-size: 9px; font-weight: 900; letter-spacing: 3px; color: #00e5ff;
+        padding: 5px 12px; border-radius: 999px; border: 1px solid rgba(0,229,255,.4);
+        background: rgba(0,229,255,.07); }
+    .top-right { display: flex; align-items: center; gap: 12px; }
+    .icon-btn { width: 44px; height: 44px; border-radius: 12px; display: flex;
+        align-items: center; justify-content: center; font-size: 17px; color: #9fb4cc;
+        background: rgba(10,15,26,.7); border: 1px solid rgba(255,255,255,.09);
+        backdrop-filter: blur(12px); }
+    .profile-chip { display: flex; align-items: center; gap: 12px; height: 52px;
+        padding: 0 18px 0 8px; border-radius: 999px; }
+    .avatar { width: 38px; height: 38px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #123049, #061019);
+        border: 2px solid rgba(0,229,255,.6); display: flex; align-items: center;
+        justify-content: center; box-shadow: 0 0 16px rgba(0,229,255,.3); }
+    .avatar svg { width: 24px; height: 24px; }
+    .p-name { font-size: 13px; font-weight: 900; letter-spacing: 1px; }
+    .p-lvl { font-size: 9px; letter-spacing: 2px; color: #7d90ab; font-weight: 800; }
+    .p-lvl b { color: #00e5ff; }
+
+    /* ===== основная сетка ===== */
+    .layout { position: fixed; top: 96px; left: 34px; right: 34px; bottom: 190px;
+        display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 22px; }
+
+    .label { display: flex; align-items: center; gap: 10px; margin-bottom: 14px;
+        font-size: 12px; font-weight: 900; letter-spacing: 4px; }
+    .label::before { content: ''; width: 4px; height: 16px; border-radius: 2px;
+        background: linear-gradient(180deg, #00e5ff, #ff2d88);
+        box-shadow: 0 0 12px rgba(0,229,255,.8); }
+    .label span { color: #7d90ab; font-size: 10px; letter-spacing: 2px; font-weight: 700; }
+
+    /* режимы */
+    .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .mode-card { position: relative; padding: 20px 18px 18px; border-radius: 18px;
+        background: rgba(12,18,32,.66); border: 1px solid rgba(255,255,255,.08);
+        backdrop-filter: blur(14px); overflow: hidden; }
+    .mode-card.sel { border-color: rgba(0,229,255,.65);
+        background: rgba(0,229,255,.09);
+        box-shadow: 0 0 40px rgba(0,229,255,.22), inset 0 0 40px rgba(0,229,255,.05); }
+    .mode-card.sel::after { content: '✓ ВЫБРАНО'; position: absolute; top: 12px; right: 12px;
+        font-size: 8px; font-weight: 900; letter-spacing: 2px; color: #06202a;
+        background: #00e5ff; padding: 4px 9px; border-radius: 999px; }
+    .m-ico { width: 46px; height: 46px; border-radius: 13px; display: flex;
+        align-items: center; justify-content: center; font-size: 20px; margin-bottom: 14px;
+        background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); }
+    .mode-card.sel .m-ico { background: rgba(0,229,255,.16); border-color: rgba(0,229,255,.5);
+        color: #aef4ff; }
+    .m-name { font-size: 15px; font-weight: 900; letter-spacing: 2px; }
+    .m-desc { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: #8fa3c0; }
+    .m-meta { margin-top: 14px; display: flex; align-items: center; gap: 7px;
+        font-size: 9px; font-weight: 900; letter-spacing: 1.5px; color: #7d90ab; }
+    .m-meta .on { width: 7px; height: 7px; border-radius: 50%; background: #34d97b;
+        box-shadow: 0 0 8px #34d97b; }
+
+    /* кнопка поиска */
+    .play-btn { margin-top: 18px; width: 100%; height: 76px; border: none; border-radius: 18px;
+        cursor: pointer; position: relative; overflow: hidden;
+        display: flex; align-items: center; justify-content: center; gap: 14px;
+        font-size: 19px; font-weight: 900; letter-spacing: 7px; color: #fff;
+        background: linear-gradient(120deg, #ff2d88, #7a4dff 55%, #00b8e6);
+        box-shadow: 0 14px 40px rgba(255,45,136,.4), 0 0 60px rgba(122,77,255,.3); }
+    .play-btn::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%;
+        width: 45%; transform: skewX(-18deg);
+        background: linear-gradient(100deg, transparent, rgba(255,255,255,.35), transparent);
+        animation: shine 3s ease-in-out infinite; }
+    @keyframes shine { 0%,55% { left: -60%; } 85%,100% { left: 130%; } }
+    .play-btn .eta { font-size: 10px; letter-spacing: 2px; font-weight: 700; opacity: .8; }
+
+    /* правая колонка */
+    .side { display: flex; flex-direction: column; gap: 18px; }
+    .card { border-radius: 18px; padding: 18px 20px; }
+
+    .profile-top { display: flex; align-items: center; gap: 16px; }
+    .big-avatar { width: 74px; height: 74px; border-radius: 50%; flex: 0 0 74px;
+        background: radial-gradient(circle at 35% 30%, #123049, #061019);
+        border: 3px solid rgba(0,229,255,.55);
+        box-shadow: 0 0 28px rgba(0,229,255,.3), inset 0 0 22px rgba(0,229,255,.15);
+        display: flex; align-items: center; justify-content: center; position: relative; }
+    .big-avatar svg { width: 44px; height: 44px; }
+    .lvl-badge { position: absolute; bottom: -7px; left: 50%; transform: translateX(-50%);
+        padding: 2px 10px; border-radius: 999px; font-size: 9px; font-weight: 900;
+        letter-spacing: 1px; color: #06202a; background: #00e5ff;
+        box-shadow: 0 0 14px rgba(0,229,255,.7); }
+    .xp-bar { margin-top: 16px; height: 8px; border-radius: 5px; overflow: hidden;
+        background: rgba(255,255,255,.08); }
+    .xp-fill { height: 100%; width: 64%; border-radius: 5px;
+        background: linear-gradient(90deg, #00e5ff, #7a4dff);
+        box-shadow: 0 0 12px rgba(0,229,255,.7); }
+    .xp-note { margin-top: 6px; display: flex; justify-content: space-between;
+        font-size: 9px; letter-spacing: 1.5px; color: #7d90ab; font-weight: 800; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+    .stat { text-align: center; padding: 11px 6px; border-radius: 12px;
+        background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); }
+    .stat b { display: block; font-size: 19px; font-weight: 900; color: #fff; }
+    .stat span { font-size: 8px; letter-spacing: 1.5px; color: #7d90ab; font-weight: 800; }
+    .stat b.gold { color: #ffb347; } .stat b.cyan { color: #00e5ff; }
+
+    .party-row { display: flex; align-items: center; gap: 11px; padding: 9px 0;
+        border-bottom: 1px solid rgba(255,255,255,.05); }
+    .party-row:last-of-type { border-bottom: none; }
+    .p-ava { width: 30px; height: 30px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #23364d, #0a1420);
+        border: 1px solid rgba(255,255,255,.15); }
+    .party-row .nm { font-size: 12px; font-weight: 800; flex: 1; }
+    .party-row .st { font-size: 9px; letter-spacing: 1.5px; font-weight: 900; color: #34d97b; }
+    .invite { margin-top: 12px; width: 100%; height: 42px; border-radius: 12px;
+        border: 1px dashed rgba(0,229,255,.4); background: rgba(0,229,255,.05);
+        color: #9adfff; font-size: 11px; font-weight: 900; letter-spacing: 3px;
+        display: flex; align-items: center; justify-content: center; }
+
+    /* ===== лоадаут ===== */
+    .loadout { position: fixed; left: 34px; right: 34px; bottom: 26px; height: 140px;
+        display: grid; grid-template-columns: 1.2fr 1.2fr .8fr; gap: 16px; }
+    .slot-card { border-radius: 18px; padding: 14px 18px; display: flex; flex-direction: column; }
+    .slot-head { display: flex; justify-content: space-between; align-items: center;
+        font-size: 9px; font-weight: 900; letter-spacing: 3px; color: #7d90ab; }
+    .slot-head .chg { color: #00e5ff; }
+    .slot-body { flex: 1; display: flex; align-items: center; gap: 16px; margin-top: 6px; }
+    .gun-svg { width: 150px; height: 54px; flex: 0 0 150px;
+        background: rgba(0,0,0,.3); border-radius: 12px; border: 1px solid rgba(255,255,255,.06);
+        display: flex; align-items: center; justify-content: center; }
+    .slot-name { font-size: 16px; font-weight: 900; letter-spacing: 2px; }
+    .slot-sub { font-size: 9.5px; color: #8fa3c0; margin-top: 3px; letter-spacing: .5px; }
+    .slot-bars { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+    .sbar { display: flex; align-items: center; gap: 8px; font-size: 8px;
+        letter-spacing: 1.5px; color: #7d90ab; font-weight: 800; }
+    .sbar .tr { flex: 1; height: 5px; border-radius: 3px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .sbar .fl { height: 100%; border-radius: 3px;
+        background: linear-gradient(90deg, #00e5ff, #ff2d88);
+        box-shadow: 0 0 8px rgba(0,229,255,.6); }
+    .gren-slot { display: flex; align-items: center; justify-content: center; gap: 14px; flex: 1; }
+    .gren-big { width: 64px; height: 64px; border-radius: 18px; display: flex;
+        align-items: center; justify-content: center; font-size: 24px;
+        background: rgba(255,85,51,.14); border: 1px solid rgba(255,85,51,.45);
+        color: #ff8a6a; box-shadow: 0 0 22px rgba(255,85,51,.15); }
+
+    /* ===== баннер сезона ===== */
+    .season { margin-top: 18px; border-radius: 18px; padding: 18px 24px;
+        display: flex; align-items: center; justify-content: space-between; gap: 26px;
+        background: linear-gradient(120deg, rgba(255,179,71,.1), rgba(255,45,136,.07) 55%, rgba(122,77,255,.1));
+        border: 1px solid rgba(255,179,71,.28);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 14px 40px rgba(0,0,0,.4); }
+    .s-tag { display: inline-block; padding: 4px 11px; border-radius: 999px;
+        font-size: 9px; font-weight: 900; letter-spacing: 3px; color: #ffd9a3;
+        border: 1px solid rgba(255,179,71,.5); background: rgba(255,179,71,.1); }
+    .s-name { margin-top: 10px; font-size: 18px; font-weight: 900; letter-spacing: 3px; }
+    .s-desc { margin-top: 5px; font-size: 10.5px; color: #8fa3c0; }
+    .s-right { width: 320px; flex: 0 0 320px; }
+    .s-prog { height: 8px; border-radius: 5px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .s-prog i { display: block; height: 100%; border-radius: 5px;
+        background: linear-gradient(90deg, #ffb347, #ff2d88);
+        box-shadow: 0 0 12px rgba(255,179,71,.6); }
+    .s-note { margin-top: 7px; display: flex; justify-content: space-between;
+        font-size: 9px; letter-spacing: 1.5px; color: #7d90ab; font-weight: 800; }
+    .s-note b { color: #ffd9a3; }
+</style>
+</head>
+<body>
+<div class="bg"></div>
+<div class="tint"></div>
+
+<!-- шапка -->
+<div class="topbar">
+    <div class="logo-wrap">
+        <div class="logo">NEON&nbsp;STICKMAN&nbsp;SHOT</div>
+        <span class="ver">v2.0 · MATCHMAKING</span>
+    </div>
+    <div class="top-right">
+        <div class="icon-btn">⚙</div>
+        <div class="profile-chip glass">
+            <div class="avatar">
+                <svg viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="5" r="3.4" stroke="#7df3ff" stroke-width="1.6"/>
+                    <path d="M12 8.5 V16 M12 11 L6.5 14 M12 11 L17.5 14 M12 16 L7.5 22 M12 16 L16.5 22"
+                          stroke="#7df3ff" stroke-width="1.6" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="p-name">Боец</div>
+                <div class="p-lvl">УРОВЕНЬ <b>24</b></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- центр -->
+<div class="layout">
+    <div>
+        <div class="label">ВЫБЕРИ РЕЖИМ <span>матч подберётся автоматически</span></div>
+        <div class="modes">
+            <div class="mode-card">
+                <div class="m-ico">⚔</div>
+                <div class="m-name">FFA</div>
+                <div class="m-desc">Каждый сам за себя. 16 ботов, мгновенный респавн, чистая механика.</div>
+                <div class="m-meta"><span class="on"></span>9 ИГРОКОВ · ЖДЁТ</div>
+            </div>
+            <div class="mode-card sel">
+                <div class="m-ico">⚑</div>
+                <div class="m-name">КОМАНДНЫЙ БОЙ</div>
+                <div class="m-desc">Синие против красных. До 50 убийств команды, спавны по секторам.</div>
+                <div class="m-meta"><span class="on"></span>14 ИГРОКОВ · ~12 С</div>
+            </div>
+            <div class="mode-card">
+                <div class="m-ico">◎</div>
+                <div class="m-name">ДОМИНИРОВАНИЕ</div>
+                <div class="m-desc">Три точки A/B/C, контроль даёт очки. Боты действуют отрядами.</div>
+                <div class="m-meta"><span class="on"></span>21 ИГРОК · ~30 С</div>
+            </div>
+        </div>
+        <button class="play-btn">НАЙТИ МАТЧ <span class="eta">~12 сек</span></button>
+
+        <div class="season">
+            <div>
+                <span class="s-tag">СЕЗОН 1</span>
+                <div class="s-name">НЕОНОВЫЙ ПРОРЫВ</div>
+                <div class="s-desc">Новые карты, режимы и награды за ранг. До конца сезона 12 дней.</div>
+            </div>
+            <div class="s-right">
+                <div class="s-prog"><i style="width:64%"></i></div>
+                <div class="s-note"><span>ПРОГРЕСС СЕЗОНА</span><b>64%</b></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="side">
+        <div class="card glass">
+            <div class="profile-top">
+                <div class="big-avatar">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="5" r="3.4" stroke="#7df3ff" stroke-width="1.4"/>
+                        <path d="M12 8.5 V16 M12 11 L6.5 14 M12 11 L17.5 14 M12 16 L7.5 22 M12 16 L16.5 22"
+                              stroke="#7df3ff" stroke-width="1.4" stroke-linecap="round"/>
+                    </svg>
+                    <div class="lvl-badge">24 УР.</div>
+                </div>
+                <div>
+                    <div class="p-name" style="font-size:16px;">Боец</div>
+                    <div class="p-lvl" style="margin-top:4px;">ЗВАНИЕ · ВЕТЕРАН АРЕНЫ</div>
+                </div>
+            </div>
+            <div class="xp-bar"><div class="xp-fill"></div></div>
+            <div class="xp-note"><span>ДО 25 УРОВНЯ</span><span>3 240 / 5 000 XP</span></div>
+            <div class="stats">
+                <div class="stat"><b class="cyan">1.84</b><span>K/D</span></div>
+                <div class="stat"><b class="gold">57%</b><span>ПОБЕД</span></div>
+                <div class="stat"><b>214</b><span>МАТЧЕЙ</span></div>
+            </div>
+        </div>
+
+        <div class="card glass">
+            <div class="label" style="margin-bottom:8px;">ОТРЯД <span>2 / 4</span></div>
+            <div class="party-row">
+                <div class="p-ava"></div><div class="nm">Neon_77</div><div class="st">В ЛОББИ</div>
+            </div>
+            <div class="party-row">
+                <div class="p-ava"></div><div class="nm">Ash64</div><div class="st">В МАТЧЕ</div>
+            </div>
+            <div class="invite">+ ПРИГЛАСИТЬ ДРУГА</div>
+        </div>
+    </div>
+</div>
+
+<!-- лоадаут -->
+<div class="loadout">
+    <div class="slot-card glass">
+        <div class="slot-head"><span>ОСНОВНОЕ · СЛОТ 1</span><span class="chg">СМЕНИТЬ ▸</span></div>
+        <div class="slot-body">
+            <div class="gun-svg">
+                <svg viewBox="0 0 150 54" width="140" height="50">
+                    <rect x="8" y="24" width="22" height="9" rx="2" fill="#2a3140"/>
+                    <rect x="28" y="21" width="40" height="12" rx="3" fill="#232a38"/>
+                    <rect x="66" y="22" width="34" height="10" rx="3" fill="#1a1c22"/>
+                    <rect x="100" y="25" width="34" height="4" rx="2" fill="#3a3f48"/>
+                    <rect x="44" y="33" width="9" height="15" rx="3" fill="#1a1c22"/>
+                    <rect x="60" y="33" width="8" height="13" rx="3" fill="#2f3542"/>
+                    <rect x="30" y="19.5" width="34" height="2.5" rx="1" fill="#00e5ff"/>
+                </svg>
+            </div>
+            <div>
+                <div class="slot-name">RIFLE</div>
+                <div class="slot-sub">Автомат · 30 патронов · 16 урона</div>
+                <div class="slot-bars">
+                    <div class="sbar">УРОН<div class="tr"><div class="fl" style="width:40%"></div></div></div>
+                    <div class="sbar">ТЕМП<div class="tr"><div class="fl" style="width:95%"></div></div></div>
+                    <div class="sbar">ДАЛЬН.<div class="tr"><div class="fl" style="width:75%"></div></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="slot-card glass">
+        <div class="slot-head"><span>ЗАПАСНОЕ · СЛОТ 2</span><span class="chg">СМЕНИТЬ ▸</span></div>
+        <div class="slot-body">
+            <div class="gun-svg">
+                <svg viewBox="0 0 150 54" width="140" height="50">
+                    <rect x="52" y="22" width="30" height="11" rx="3" fill="#232a38"/>
+                    <circle cx="66" cy="27" r="7" fill="#3a3f48"/>
+                    <rect x="82" y="24" width="26" height="5" rx="2" fill="#3a3f48"/>
+                    <rect x="58" y="33" width="10" height="14" rx="3" fill="#1a1c22"/>
+                    <rect x="54" y="20.5" width="26" height="2.5" rx="1" fill="#ff2d88"/>
+                </svg>
+            </div>
+            <div>
+                <div class="slot-name">REVOLVER</div>
+                <div class="slot-sub">Револьвер · 6 патронов · 45 урона</div>
+                <div class="slot-bars">
+                    <div class="sbar">УРОН<div class="tr"><div class="fl" style="width:80%"></div></div></div>
+                    <div class="sbar">ТЕМП<div class="tr"><div class="fl" style="width:20%"></div></div></div>
+                    <div class="sbar">ДАЛЬН.<div class="tr"><div class="fl" style="width:60%"></div></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="slot-card glass">
+        <div class="slot-head"><span>ГРАНАТА</span><span class="chg">СМЕНИТЬ ▸</span></div>
+        <div class="gren-slot">
+            <div class="gren-big">Ф</div>
+            <div>
+                <div class="slot-name" style="font-size:14px;">ФРАГ ×2</div>
+                <div class="slot-sub" style="margin-top:4px;">V — выбор<br>G — бросок</div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
