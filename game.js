@@ -129,6 +129,9 @@ const loadoutAbilityEl = $('loadout-ability');
 const lsDmgEl       = $('ls-dmg');
 const lsRateEl      = $('ls-rate');
 const lsRangeEl     = $('ls-range');
+const lsDmgValEl    = $('ls-dmg-val');
+const lsRateValEl   = $('ls-rate-val');
+const lsRangeValEl  = $('ls-range-val');
 const weaponClassEl = $('weapon-class');
 const weaponModeEl  = $('weapon-mode');
 
@@ -381,6 +384,7 @@ const AU = {
     resume() {
         this.init();
         if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+        Music.start();
     },
 
     noiseHit(t, dur, vol, f0, f1, pan = 0, type = 'lowpass', q = 0.8) {
@@ -515,6 +519,96 @@ function spatialSound(pos) {
     const d = camera.position.distanceTo(pos);
     return { pan: clamp(v.x, -1, 1), vol: clamp(1 - d / 70, 0, 1) };
 }
+
+/* ============================================================
+   ФОНОВАЯ МУЗЫКА — зацикленный плейлист с фейдом
+   ============================================================ */
+const Music = {
+    tracks: ['assets/music/magnific-24k.mp3', 'assets/music/magnific-ckt-rip.mp3'],
+    el: null,
+    idx: 0,
+    started: false,
+    muted: false,
+    fadeTimer: null,
+    volume: 0.26,
+
+    init() {
+        if (this.el) return;
+        this.el = new Audio();
+        this.el.id = 'bg-music';
+        this.el.volume = 0;
+        this.el.preload = 'auto';
+        this.el.style.display = 'none';
+        document.body.appendChild(this.el);
+        this.el.addEventListener('ended', () => this.next());
+        try {
+            this.muted = localStorage.getItem('nss_music_muted') === '1';
+        } catch (e) { void e; }
+        this.updateButton();
+    },
+
+    start() {
+        this.init();
+        if (this.muted) return;
+        if (this.started && this.el.src && !this.el.paused) return;
+        this.started = true;
+        if (!this.el.src) this.el.src = this.tracks[this.idx];
+        const p = this.el.play();
+        if (p && p.catch) p.catch(() => {});
+        this.fadeTo(this.volume, 2.5);
+    },
+
+    next() {
+        this.idx = (this.idx + 1) % this.tracks.length;
+        if (!this.el) return;
+        this.el.src = this.tracks[this.idx];
+        if (!this.muted) {
+            const p = this.el.play();
+            if (p && p.catch) p.catch(() => {});
+        }
+    },
+
+    fadeTo(target, seconds) {
+        if (!this.el) return;
+        if (this.fadeTimer) clearInterval(this.fadeTimer);
+        const step = (target - this.el.volume) / Math.max(1, seconds * 20);
+        this.fadeTimer = setInterval(() => {
+            if (!this.el) return;
+            let v = this.el.volume + step;
+            if ((step > 0 && v >= target) || (step < 0 && v <= target) || step === 0) {
+                v = target;
+                clearInterval(this.fadeTimer);
+                this.fadeTimer = null;
+            }
+            this.el.volume = clamp(v, 0, 1);
+        }, 50);
+    },
+
+    toggle() {
+        this.init();
+        this.muted = !this.muted;
+        if (this.muted) {
+            this.fadeTo(0, 0.4);
+            setTimeout(() => { if (this.muted && this.el) this.el.pause(); }, 450);
+        } else if (!this.started) {
+            this.start();
+        } else {
+            const p = this.el.play();
+            if (p && p.catch) p.catch(() => {});
+            this.fadeTo(this.volume, 0.8);
+        }
+        try { localStorage.setItem('nss_music_muted', this.muted ? '1' : '0'); } catch (e) { void e; }
+        this.updateButton();
+        return this.muted;
+    },
+
+    updateButton() {
+        const btn = document.getElementById('music-btn');
+        if (!btn) return;
+        btn.classList.toggle('muted', this.muted);
+        btn.title = this.muted ? 'Включить музыку (M)' : 'Выключить музыку (M)';
+    },
+};
 
 /* ============================================================
    THREE BOOTSTRAP
@@ -1059,6 +1153,157 @@ function createWeaponModel(id) {
         case 'shotgun':  return createShotgun();
         case 'sniper':   return createSniper();
         default:         return createRifle();
+    }
+}
+
+/* ============================================================
+   3D-ПРЕВЬЮ ОРУЖИЯ В МЕНЮ
+   ============================================================ */
+let showcaseRenderer = null;
+let showcaseScene = null;
+let showcaseCamera = null;
+let showcasePivot = null;
+let showcaseModel = null;
+let showcaseRing = null;
+let showcaseT = 0;
+let showcaseBroken = false;
+
+function initShowcase() {
+    const canvas = $('weapon-showcase');
+    if (!canvas || showcaseBroken) return;
+    try {
+        showcaseRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        showcaseRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        showcaseRenderer.setSize(720, 420, false);
+        showcaseRenderer.outputColorSpace = THREE.SRGBColorSpace;
+        showcaseRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+        showcaseRenderer.toneMappingExposure = 1.4;
+    } catch (e) {
+        showcaseBroken = true;
+        console.warn('[SHOWCASE] disabled:', e);
+        return;
+    }
+
+    showcaseScene = new THREE.Scene();
+    showcaseCamera = new THREE.PerspectiveCamera(36, 720 / 420, 0.01, 60);
+
+    // неоновая environment-карта: без неё металлические материалы чёрные
+    try {
+        const envCanvas = document.createElement('canvas');
+        envCanvas.width = 64; envCanvas.height = 32;
+        const ex = envCanvas.getContext('2d');
+        const eg = ex.createLinearGradient(0, 0, 0, 32);
+        eg.addColorStop(0, '#55688c');
+        eg.addColorStop(0.5, '#1c2436');
+        eg.addColorStop(1, '#0a0e18');
+        ex.fillStyle = eg;
+        ex.fillRect(0, 0, 64, 32);
+        ex.fillStyle = 'rgba(0, 229, 255, 0.95)';
+        ex.beginPath(); ex.arc(14, 10, 7, 0, Math.PI * 2); ex.fill();
+        ex.fillStyle = 'rgba(255, 45, 136, 0.85)';
+        ex.beginPath(); ex.arc(50, 22, 6, 0, Math.PI * 2); ex.fill();
+        ex.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ex.beginPath(); ex.arc(34, 6, 4, 0, Math.PI * 2); ex.fill();
+        const envTex = new THREE.CanvasTexture(envCanvas);
+        envTex.mapping = THREE.EquirectangularReflectionMapping;
+        envTex.colorSpace = THREE.SRGBColorSpace;
+        const pmrem = new THREE.PMREMGenerator(showcaseRenderer);
+        showcaseScene.environment = pmrem.fromEquirectangular(envTex).texture;
+        pmrem.dispose();
+        envTex.dispose();
+    } catch (e) {
+        console.warn('[SHOWCASE] env map skipped:', e);
+    }
+
+    showcaseScene.add(new THREE.AmbientLight(0x99aacc, 1.15));
+    const key = new THREE.DirectionalLight(0xffffff, 1.9);
+    key.position.set(3, 3.5, 2.5);
+    showcaseScene.add(key);
+    const fill = new THREE.DirectionalLight(0xaad4ff, 1.1);
+    fill.position.set(-2.5, 1.2, 2.2);
+    showcaseScene.add(fill);
+    const rimCyan = new THREE.PointLight(0x00e5ff, 11, 8, 2);
+    rimCyan.position.set(-1.5, 0.8, 1.3);
+    showcaseScene.add(rimCyan);
+    const rimMag = new THREE.PointLight(0xff2d88, 6, 8, 2);
+    rimMag.position.set(2.0, -1.0, 0.9);
+    showcaseScene.add(rimMag);
+
+    showcaseRing = new THREE.Mesh(
+        new THREE.TorusGeometry(1.0, 0.016, 8, 72),
+        new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.5, toneMapped: false })
+    );
+    showcaseRing.rotation.x = -Math.PI / 2;
+    showcaseScene.add(showcaseRing);
+    const ring2 = new THREE.Mesh(
+        new THREE.TorusGeometry(0.72, 0.009, 8, 64),
+        new THREE.MeshBasicMaterial({ color: 0xff2d88, transparent: true, opacity: 0.35, toneMapped: false })
+    );
+    ring2.rotation.x = -Math.PI / 2;
+    ring2.position.y = 0.1;
+    showcaseRing.add(ring2);
+
+    showcasePivot = new THREE.Group();
+    showcaseScene.add(showcasePivot);
+    setShowcaseWeapon(selectedWeapon);
+}
+
+function setShowcaseWeapon(id) {
+    if (!showcaseScene || !showcasePivot) return;
+    if (showcaseModel) {
+        showcasePivot.remove(showcaseModel);
+        disposeObj(showcaseModel);
+    }
+    const model = createWeaponModel(id);
+    const box = new THREE.Box3().setFromObject(model);
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    model.position.set(-center.x, -center.y, -center.z);
+    model.userData.baseY = -center.y;
+    model.traverse(o => {
+        if (!o.isMesh) return;
+        o.castShadow = false;
+        o.receiveShadow = false;
+        if (o.material === GUNMAT.hand) { o.visible = false; return; }
+        if (o.material && o.material.isMeshStandardMaterial) {
+            o.material = o.material.clone();
+            o.material.color.multiplyScalar(2.0);
+            o.material.metalness = Math.min(o.material.metalness, 0.7);
+            o.material.roughness = Math.max(o.material.roughness, 0.32);
+        }
+    });
+    showcasePivot.add(model);
+    showcaseModel = model;
+
+    const maxDim = Math.max(size.x, size.y, size.z, 0.2);
+    const dist = maxDim * 1.45 + 0.16;
+    showcaseCamera.position.set(dist * 0.22, dist * 0.4, dist * 0.89);
+    showcaseCamera.lookAt(0, 0.01, 0);
+    showcasePivot.rotation.y = Math.PI / 2 - 0.35;
+    if (showcaseRing) {
+        showcaseRing.position.y = -size.y * 0.5 - 0.12;
+        showcaseRing.scale.setScalar(maxDim * 0.55 + 0.08);
+    }
+}
+
+function updateShowcase(dt) {
+    if (!showcaseRenderer || running || showcaseBroken) return;
+    showcaseT += dt;
+    if (showcasePivot) showcasePivot.rotation.y += dt * 0.5;
+    if (showcaseModel) {
+        showcaseModel.position.y = (showcaseModel.userData.baseY || 0) + Math.sin(showcaseT * 1.3) * 0.025;
+    }
+    if (showcaseRing) {
+        showcaseRing.rotation.z += dt * 0.35;
+        showcaseRing.material.opacity = 0.35 + Math.sin(showcaseT * 2.2) * 0.15;
+    }
+    try {
+        showcaseRenderer.render(showcaseScene, showcaseCamera);
+    } catch (e) {
+        showcaseBroken = true;
+        console.warn('[SHOWCASE] render disabled:', e);
     }
 }
 
@@ -1800,6 +2045,7 @@ function segmentClear3D(a, b) {
 function initInput() {
     addEventListener('keydown', (e) => {
         const k = e.key.toLowerCase();
+        if (!Music.started && !Music.muted) Music.start();
         if (k === 'tab') {
             e.preventDefault();
             if (running) {
@@ -1875,6 +2121,8 @@ function onKeyPress(k) {
         if (world.alive) tryGrenade();
     } else if (k === 'f') {
         if (world.alive && world.nearbyMedkit) tryMedkit(world.nearbyMedkit);
+    } else if (k === 'm') {
+        Music.toggle();
     }
 }
 
@@ -3588,6 +3836,8 @@ function animate() {
 
     if (holoBoard) holoBoard.rotation.y = Math.sin(clock.getElapsedTime() * 0.25) * 0.5;
 
+    updateShowcase(dt);
+
     renderer.clear();
     renderer.render(scene, camera);
     renderer.clearDepth();
@@ -3600,13 +3850,16 @@ function animate() {
 function updateLoadoutFromCard(card) {
     if (!card) return;
     const h3 = card.querySelector('h3');
-    const ab = card.querySelector('.car-ability');
     if (loadoutNameEl && h3) loadoutNameEl.textContent = h3.textContent;
-    if (loadoutAbilityEl && ab) loadoutAbilityEl.textContent = ab.textContent;
+    if (loadoutAbilityEl) loadoutAbilityEl.textContent = card.dataset.ability || '';
     const bars = card.querySelectorAll('.mini-bar i');
     const targets = [lsDmgEl, lsRateEl, lsRangeEl];
+    const vals = [lsDmgValEl, lsRateValEl, lsRangeValEl];
     for (let i = 0; i < targets.length; i++) {
-        if (targets[i] && bars[i]) targets[i].style.width = bars[i].style.width;
+        if (!bars[i]) continue;
+        const w = bars[i].style.width || '0%';
+        if (targets[i]) targets[i].style.width = w;
+        if (vals[i]) vals[i].textContent = String(parseInt(w, 10) || 0);
     }
 }
 
@@ -3705,6 +3958,7 @@ function boot() {
                 card.classList.add('selected');
                 selectedWeapon = card.dataset.weapon;
                 updateLoadoutFromCard(card);
+                setShowcaseWeapon(selectedWeapon);
                 card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
                 AU.resume();
                 AU.ui();
@@ -3721,6 +3975,12 @@ function boot() {
         };
         if (carPrevEl) carPrevEl.addEventListener('click', () => scrollCarousel(-1));
         if (carNextEl) carNextEl.addEventListener('click', () => scrollCarousel(1));
+
+        const musicBtnEl = $('music-btn');
+        if (musicBtnEl) musicBtnEl.addEventListener('click', () => {
+            AU.resume();
+            Music.toggle();
+        });
 
         connectBtn.addEventListener('click', () => {
             const name = (nicknameEl.value || 'Боец').trim().slice(0, 16) || 'Боец';
@@ -3741,6 +4001,7 @@ function boot() {
         });
 
         drawWeaponPreviews();
+        initShowcase();
         animate();
         console.log('[BOOT] OK');
     } catch (err) {

@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEON STICKMAN SHOT — MAXIMUM NEON ARENA v4</title>
     <link rel="icon" href="data:,">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Changa+One&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script type="importmap">
     { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
@@ -195,6 +198,7 @@
 
     <!-- ===== МЕНЮ ===== -->
     <div id="menu">
+        <button id="music-btn" title="Музыка (M)">♪</button>
         <div class="menu-shell">
             <header class="menu-hero">
                 <div class="logo-row">
@@ -205,121 +209,53 @@
             </header>
 
             <div class="menu-grid">
-                <section class="loadout">
+                <section class="showcase">
                     <div class="section-title"><span>АРСЕНАЛ</span><i>выбери оружие — 1-9 в бою</i></div>
 
-                    <div class="carousel-wrap">
-                        <button class="car-arrow" id="car-prev" aria-label="Назад">‹</button>
-                        <div id="car-select">
-                            <div class="car-card selected" data-weapon="pistol">
-                                <canvas class="car-preview" width="120" height="70" data-preview="pistol"></canvas>
-                                <h3>PISTOL</h3>
-                                <p class="car-desc">Пистолет · 20 урона · 15 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:42%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:55%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:48%"></i></div></div>
-                                <div class="car-ability">Одиночный · стартовый</div>
-                            </div>
-                            <div class="car-card" data-weapon="revolver">
-                                <canvas class="car-preview" width="120" height="70" data-preview="revolver"></canvas>
-                                <h3>REVOLVER</h3>
-                                <p class="car-desc">Револьвер · 45 урона · 6 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:80%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:20%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:60%"></i></div></div>
-                                <div class="car-ability">Хэдшот ×2 · тяжёлый</div>
-                            </div>
-                            <div class="car-card" data-weapon="dmr">
-                                <canvas class="car-preview" width="120" height="70" data-preview="dmr"></canvas>
-                                <h3>DMR</h3>
-                                <p class="car-desc">Марксман · 38 урона · 12 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:70%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:42%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:92%"></i></div></div>
-                                <div class="car-ability">Оптика · точный на дистанции</div>
-                            </div>
-                            <div class="car-card" data-weapon="rifle">
-                                <canvas class="car-preview" width="120" height="70" data-preview="rifle"></canvas>
-                                <h3>RIFLE</h3>
-                                <p class="car-desc">Автомат · 16 урона · 30 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:40%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:95%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:75%"></i></div></div>
-                                <div class="car-ability">Автоматический · универсал</div>
-                            </div>
-                            <div class="car-card" data-weapon="burst">
-                                <canvas class="car-preview" width="120" height="70" data-preview="burst"></canvas>
-                                <h3>BURST</h3>
-                                <p class="car-desc">Штурмовая · 3×21 урона · 30 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:72%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:48%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:78%"></i></div></div>
-                                <div class="car-ability">Очередь по 3 · <b>точная</b></div>
-                            </div>
-                            <div class="car-card" data-weapon="smg">
-                                <canvas class="car-preview" width="120" height="70" data-preview="smg"></canvas>
-                                <h3>SMG</h3>
-                                <p class="car-desc">ПП · 11 урона · 35 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:28%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:100%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:40%"></i></div></div>
-                                <div class="car-ability">Очень быстрый · разброс</div>
-                            </div>
-                            <div class="car-card" data-weapon="lmg">
-                                <canvas class="car-preview" width="120" height="70" data-preview="lmg"></canvas>
-                                <h3>LMG</h3>
-                                <p class="car-desc">Пулемёт · 19 урона · 80 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:52%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:88%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:65%"></i></div></div>
-                                <div class="car-ability">Подавление · магазин 80</div>
-                            </div>
-                            <div class="car-card" data-weapon="shotgun">
-                                <canvas class="car-preview" width="120" height="70" data-preview="shotgun"></canvas>
-                                <h3>SHOTGUN</h3>
-                                <p class="car-desc">Дробовик · 8×9 урона · 7 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:88%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:22%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:22%"></i></div></div>
-                                <div class="car-ability">Одиночный · ближний бой</div>
-                            </div>
-                            <div class="car-card" data-weapon="sniper">
-                                <canvas class="car-preview" width="120" height="70" data-preview="sniper"></canvas>
-                                <h3>SNIPER</h3>
-                                <p class="car-desc">Винтовка · 85 урона · 8 патронов</p>
-                                <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:100%"></i></div></div>
-                                <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:14%"></i></div></div>
-                                <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:100%"></i></div></div>
-                                <div class="car-ability">Оптика · <b>x2</b> за хедшот</div>
-                            </div>
-                        </div>
-                        <button class="car-arrow" id="car-next" aria-label="Вперёд">›</button>
-                    </div>
-
-                    <div id="loadout-panel">
-                        <div class="lp-head">
+                    <div class="showcase-stage">
+                        <canvas id="weapon-showcase" width="720" height="420"></canvas>
+                        <div class="stage-glow"></div>
+                        <div class="stage-badge">3D-ПРЕВЬЮ</div>
+                        <div class="stage-name">
                             <span id="loadout-name">PISTOL</span>
                             <span id="loadout-ability">Одиночный · стартовый</span>
                         </div>
-                        <div class="lp-stats">
-                            <div class="lp-stat">
-                                <span>УРОН</span>
-                                <div class="lp-bar"><i id="ls-dmg" style="width:42%"></i></div>
-                            </div>
-                            <div class="lp-stat">
-                                <span>ТЕМП</span>
-                                <div class="lp-bar"><i id="ls-rate" style="width:55%"></i></div>
-                            </div>
-                            <div class="lp-stat">
-                                <span>ДАЛЬНОСТЬ</span>
-                                <div class="lp-bar"><i id="ls-range" style="width:48%"></i></div>
-                            </div>
+                    </div>
+
+                    <div class="lp-stats">
+                        <div class="lp-stat">
+                            <span>УРОН</span>
+                            <div class="lp-bar"><i id="ls-dmg" style="width:42%"></i></div>
+                            <b id="ls-dmg-val">42</b>
+                        </div>
+                        <div class="lp-stat">
+                            <span>ТЕМП</span>
+                            <div class="lp-bar"><i id="ls-rate" style="width:55%"></i></div>
+                            <b id="ls-rate-val">55</b>
+                        </div>
+                        <div class="lp-stat">
+                            <span>ДАЛЬНОСТЬ</span>
+                            <div class="lp-bar"><i id="ls-range" style="width:48%"></i></div>
+                            <b id="ls-range-val">48</b>
                         </div>
                     </div>
                 </section>
 
                 <aside class="player-side">
-                    <div class="section-title"><span>БОЕЦ</span><i>позывной</i></div>
+                    <div class="player-head">
+                        <div class="big-avatar">
+                            <svg viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="5" r="3.2" stroke="#7df3ff" stroke-width="1.5"/>
+                                <path d="M12 8.4 V16 M12 11 L6.5 14 M12 11 L17.5 14 M12 16 L7.5 22 M12 16 L16.5 22"
+                                      stroke="#7df3ff" stroke-width="1.5" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div class="ph-name">ВАШ БОЕЦ</div>
+                            <div class="ph-note">СИНИЕ · FFA-АРЕНА · 16 БОТОВ</div>
+                        </div>
+                    </div>
+
                     <input id="nickname" type="text" maxlength="16"
                            placeholder="Введите никнейм" value="Боец" autocomplete="off">
                     <button id="connect-btn">В БОЙ</button>
@@ -338,6 +274,7 @@
                         <div><b>F</b><span>аптечка</span></div>
                         <div><b>TAB</b><span>табло</span></div>
                         <div><b>Q/E</b><span>смена</span></div>
+                        <div><b>M</b><span>музыка</span></div>
                     </div>
 
                     <div id="grenade-help">
@@ -345,6 +282,76 @@
                         Резерв: 3 магазина. Дым скрывает вас от ботов, флеш слепит их.
                     </div>
                 </aside>
+            </div>
+
+            <div class="carousel-wrap">
+                <button class="car-arrow" id="car-prev" aria-label="Назад">‹</button>
+                <div id="car-select">
+                    <div class="car-card selected" data-weapon="pistol" data-ability="Одиночный · стартовый">
+                        <div class="cc-top"><h3>PISTOL</h3><span class="cc-tag">15 ПАТР.</span></div>
+                        <p class="car-desc">Пистолет · 20 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:42%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:55%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:48%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="revolver" data-ability="Хэдшот ×2 · тяжёлый">
+                        <div class="cc-top"><h3>REVOLVER</h3><span class="cc-tag">6 ПАТР.</span></div>
+                        <p class="car-desc">Револьвер · 45 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:80%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:20%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:60%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="dmr" data-ability="Оптика · точный на дистанции">
+                        <div class="cc-top"><h3>DMR</h3><span class="cc-tag">12 ПАТР.</span></div>
+                        <p class="car-desc">Марксман · 38 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:70%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:42%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:92%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="rifle" data-ability="Автоматический · универсал">
+                        <div class="cc-top"><h3>RIFLE</h3><span class="cc-tag">30 ПАТР.</span></div>
+                        <p class="car-desc">Автомат · 16 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:40%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:95%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:75%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="burst" data-ability="Очередь по 3 · точная">
+                        <div class="cc-top"><h3>BURST</h3><span class="cc-tag">30 ПАТР.</span></div>
+                        <p class="car-desc">Штурмовая · 3×21 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:72%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:48%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:78%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="smg" data-ability="Очень быстрый · разброс">
+                        <div class="cc-top"><h3>SMG</h3><span class="cc-tag">35 ПАТР.</span></div>
+                        <p class="car-desc">ПП · 11 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:28%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:100%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:40%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="lmg" data-ability="Подавление · магазин 80">
+                        <div class="cc-top"><h3>LMG</h3><span class="cc-tag">80 ПАТР.</span></div>
+                        <p class="car-desc">Пулемёт · 19 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:52%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:88%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:65%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="shotgun" data-ability="Одиночный · ближний бой">
+                        <div class="cc-top"><h3>SHOTGUN</h3><span class="cc-tag">7 ПАТР.</span></div>
+                        <p class="car-desc">Дробовик · 8×9 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:88%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:22%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:22%"></i></div></div>
+                    </div>
+                    <div class="car-card" data-weapon="sniper" data-ability="Оптика · x2 за хедшот">
+                        <div class="cc-top"><h3>SNIPER</h3><span class="cc-tag">8 ПАТР.</span></div>
+                        <p class="car-desc">Винтовка · 85 урона</p>
+                        <div class="stat-row"><span>Урон</span><div class="mini-bar"><i style="width:100%"></i></div></div>
+                        <div class="stat-row"><span>Темп</span><div class="mini-bar"><i style="width:14%"></i></div></div>
+                        <div class="stat-row"><span>Дальн.</span><div class="mini-bar"><i style="width:100%"></i></div></div>
+                    </div>
+                </div>
+                <button class="car-arrow" id="car-next" aria-label="Вперёд">›</button>
             </div>
         </div>
     </div>
