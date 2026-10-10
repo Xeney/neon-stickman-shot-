@@ -23,13 +23,50 @@ from pathlib import Path
 
 import websockets
 
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_config() -> dict:
+    cfg = {
+        "mode": "ffa",
+        "ffa": {"max_bots": 16},
+        "defense": {
+            "break_seconds": 30, "first_break_seconds": 12, "points_per_kill": 10,
+            "wave_base": 6, "wave_growth": 3, "max_alive": 48, "spawn_interval": 1.4,
+            "hp_growth": 0.12, "hp_cap": 4.0, "speed_growth": 0.02, "speed_cap": 1.4,
+            "dmg_growth": 0.05, "dmg_cap": 2.0, "defeat_restart_seconds": 10,
+            "heal_on_wave_clear": 50,
+        },
+    }
+    try:
+        raw = json.loads((BASE_DIR / "config.json").read_text(encoding="utf-8"))
+        for k, v in raw.items():
+            if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                cfg[k].update(v)
+            else:
+                cfg[k] = v
+    except FileNotFoundError:
+        print("[CONFIG] config.json не найден — используются настройки по умолчанию")
+    except Exception as e:
+        print("[CONFIG] Ошибка чтения config.json:", e)
+    return cfg
+
+
+CONFIG = load_config()
+MODE = str(CONFIG.get("mode", "ffa")).lower()
+if MODE not in ("ffa", "defense"):
+    print(f"[CONFIG] Неизвестный режим '{MODE}' — включён ffa")
+    MODE = "ffa"
+DEF = CONFIG["defense"]
+FFA_CFG = CONFIG["ffa"]
+
 HTTP_PORT = 8080
 WS_PORT = 8001
 TICK_RATE = 30
 TICK_INTERVAL = 1.0 / TICK_RATE
 
-ARENA_HALF = 200.0
-SPAWN_RANGE = 165.0
+ARENA_HALF = 150.0 if MODE == "defense" else 200.0
+SPAWN_RANGE = 165.0 if MODE == "ffa" else 118.0
 
 HEAD_OFFSET = 1.65
 HEAD_RADIUS = 0.25
@@ -40,7 +77,7 @@ HEADSHOT_MULT = 2.0
 
 SHOOT_RANGE = 200.0
 RESPAWN_TIME = 3.0
-MAX_BOTS = 16
+MAX_BOTS = int(FFA_CFG.get("max_bots", 16))
 
 GRID_CELL = 20.0
 RESERVE_MAGS = 3
@@ -66,9 +103,10 @@ BOT_WEAPONS = ("pistol", "revolver", "smg", "rifle", "burst", "dmr", "lmg", "sho
 GRENADE_FUSE = 2.0
 GRENADE_RADIUS = 9.0
 GRENADE_DAMAGE = 95
-SMOKE_RADIUS = 3.6
-SMOKE_LIFE = 12.0
+SMOKE_RADIUS = 10.8
+SMOKE_LIFE = 14.0
 FLASH_RANGE = 46.0
+FLASH_BLIND_TIME = 4.0
 GRENADE_TYPES = ("frag", "smoke", "flash")
 GRENADE_START = {"frag": 2, "smoke": 1, "flash": 1}
 GRENADE_CAP = {"frag": 4, "smoke": 3, "flash": 3}
@@ -97,17 +135,26 @@ player_hist: dict[str, deque] = {}
 #  КАРТА (должна совпадать с game.js)
 # ============================================================
 def build_wall_list():
+    if MODE == "defense":
+        return build_wall_list_defense()
+    return build_wall_list_ffa()
+
+
+def build_wall_list_defense():
+    """«Крепость»: центральный укреплённый периметр, руины, каналы.
+    Должна совпадать с game.js buildWallList('defense')."""
     walls = []
-    A = ARENA_HALF
+    A = ARENA_HALF  # 150
     T = 3.0
-    H = 16.0
+    H = 18.0
 
     walls.append((0, A, A, T / 2, H, "outer"))
     walls.append((0, -A, A, T / 2, H, "outer"))
     walls.append((A, 0, T / 2, A, H, "outer"))
     walls.append((-A, 0, T / 2, A, H, "outer"))
 
-    S, door, th, h = 42.0, 9.0, 2.4, 6.2
+    # Центральная крепость: квадрат 46x46, 4 широких входа (12), башни по углам
+    S, door, th, h = 46.0, 12.0, 2.0, 5.0
     half = S / 2
     seg = (S - door) / 2
     for sx in (-1, 1):
@@ -118,13 +165,23 @@ def build_wall_list():
         cz = sz * (S / 2 - seg / 2)
         walls.append((half, cz, th / 2, seg / 2, h, "cwall"))
         walls.append((-half, cz, th / 2, seg / 2, h, "cwall"))
-    for dx, dz in ((-14, -14), (14, -14), (14, 14), (-14, 14)):
-        walls.append((dx, dz, 1.1, 1.1, h, "pillar"))
+    for tx in (-1, 1):
+        for tz in (-1, 1):
+            cx, cz = tx * half, tz * half
+            walls.append((cx, cz, 2.2, 2.2, 7.5, "tower"))
 
+    # Внутренние колонны и укрытия крепости
+    for dx, dz in ((-13, -13), (13, -13), (13, 13), (-13, 13)):
+        walls.append((dx, dz, 0.9, 0.9, h, "pillar"))
+    walls.append((0, 0, 2.4, 2.4, 1.6, "crate"))
+    for dx, dz in ((-17, 0), (17, 0), (0, -17), (0, 17)):
+        walls.append((dx, dz, 2.6, 0.7, 1.4, "cover"))
+
+    # Руины среднего кольца: 8 зданий 20x20 с дверями
     for qx in (-1, 1):
         for qz in (-1, 1):
-            cx, cz = qx * 100.0, qz * 100.0
-            s2, h2, th2, d2 = 34.0, 5.6, 2.0, 8.0
+            cx, cz = qx * 72.0, qz * 72.0
+            s2, h2, th2, d2 = 20.0, 4.0, 1.6, 7.0
             seg2 = (s2 - d2) / 2
             half2 = s2 / 2
             for sx in (-1, 1):
@@ -135,48 +192,149 @@ def build_wall_list():
                 z = cz + sz * (s2 / 2 - seg2 / 2)
                 walls.append((cx + half2, z, th2 / 2, seg2 / 2, h2, "bwall"))
                 walls.append((cx - half2, z, th2 / 2, seg2 / 2, h2, "bwall"))
+    for cx, cz in ((72, 0), (-72, 0), (0, 72), (0, -72)):
+        s2, h2, th2, d2 = 20.0, 4.0, 1.6, 7.0
+        seg2 = (s2 - d2) / 2
+        half2 = s2 / 2
+        for sx in (-1, 1):
+            x = cx + sx * (s2 / 2 - seg2 / 2)
+            walls.append((x, cz + half2, seg2 / 2, th2 / 2, h2, "bwall"))
+            walls.append((x, cz - half2, seg2 / 2, th2 / 2, h2, "bwall"))
+        for sz in (-1, 1):
+            z = cz + sz * (s2 / 2 - seg2 / 2)
+            walls.append((cx + half2, z, th2 / 2, seg2 / 2, h2, "bwall"))
+            walls.append((cx - half2, z, th2 / 2, seg2 / 2, h2, "bwall"))
 
-    for tx in (-1, 1):
-        for tz in (-1, 1):
-            cx, cz = tx * 162.0, tz * 162.0
-            s3, h3, th3, d3 = 14.0, 9.5, 1.8, 6.0
-            seg3 = (s3 - d3) / 2
-            half3 = s3 / 2
-            for sx in (-1, 1):
-                x = cx + sx * (s3 / 2 - seg3 / 2)
-                walls.append((x, cz + half3, seg3 / 2, th3 / 2, h3, "tower"))
-                walls.append((x, cz - half3, seg3 / 2, th3 / 2, h3, "tower"))
-            for sz in (-1, 1):
-                z = cz + sz * (s3 / 2 - seg3 / 2)
-                walls.append((cx + half3, z, th3 / 2, seg3 / 2, h3, "tower"))
-                walls.append((cx - half3, z, th3 / 2, seg3 / 2, h3, "tower"))
+    # Каналы-стены на подходах (x = ±112 и z = ±112, с разрывами)
+    for off in (-112.0, 112.0):
+        for c in (-70.0, 0.0, 70.0):
+            walls.append((off, c, 1.0, 22.0, 3.0, "lane"))
+            walls.append((c, off, 22.0, 1.0, 3.0, "lane"))
 
-    lanes = (-146.0, -92.0, -38.0, 38.0, 92.0, 146.0)
-    for off in (-58.0, 58.0):
-        for zc in lanes:
-            walls.append((off, zc, 0.8, 13.0, 3.4, "lane"))
-            walls.append((zc, off, 13.0, 0.8, 3.4, "lane"))
-
+    # Укрытия на открытых подходах
     covers = [
-        (30, 10, 3.0, 0.6), (30, -10, 3.0, 0.6), (-30, 10, 3.0, 0.6), (-30, -10, 3.0, 0.6),
-        (10, 30, 0.6, 3.0), (-10, 30, 0.6, 3.0), (10, -30, 0.6, 3.0), (-10, -30, 0.6, 3.0),
-        (125, 0, 6.0, 0.7), (-125, 0, 6.0, 0.7), (0, 125, 0.7, 6.0), (0, -125, 0.7, 6.0),
-        (85, 45, 2.4, 0.6), (85, -45, 2.4, 0.6), (-85, 45, 2.4, 0.6), (-85, -45, 2.4, 0.6),
-        (45, 85, 0.6, 2.4), (45, -85, 0.6, 2.4), (-45, 85, 0.6, 2.4), (-45, -85, 0.6, 2.4),
+        (40, 40, 3.2, 0.7), (-40, 40, 3.2, 0.7), (40, -40, 3.2, 0.7), (-40, -40, 3.2, 0.7),
+        (40, 40, 0.7, 3.2), (-40, 40, 0.7, 3.2), (40, -40, 0.7, 3.2), (-40, -40, 0.7, 3.2),
+        (95, 35, 2.6, 0.7), (95, -35, 2.6, 0.7), (-95, 35, 2.6, 0.7), (-95, -35, 2.6, 0.7),
+        (35, 95, 0.7, 2.6), (35, -95, 0.7, 2.6), (-35, 95, 0.7, 2.6), (-35, -95, 0.7, 2.6),
     ]
     for (x, z, hw, hd) in covers:
         walls.append((x, z, hw, hd, 1.5, "cover"))
 
-    clusters = [(70, 20), (20, 70), (-70, 20), (-20, 70),
-                (70, -20), (20, -70), (-70, -20), (-20, -70)]
-    offsets = [(0.0, 0.0), (2.05, 0.3), (0.4, 2.05)]
+    # Ящики и бочки
+    clusters = [(55, 25), (-55, 25), (55, -25), (-55, -25),
+                (25, 55), (-25, 55), (25, -55), (-25, -55)]
+    offsets = [(0.0, 0.0), (1.9, 0.3)]
     for (cx, cz) in clusters:
         for (ox, oz) in offsets:
             walls.append((cx + ox, cz + oz, 0.85, 0.85, 1.7, "crate"))
+    barrels = [(23, 23), (-23, 23), (23, -23), (-23, -23),
+               (85, 0), (-85, 0), (0, 85), (0, -85)]
+    for (x, z) in barrels:
+        walls.append((x, z, 0.55, 0.55, 2.1, "barrel"))
 
-    barrels = [(150, 30), (150, -30), (-150, 30), (-150, -30),
-               (30, 150), (-30, 150), (30, -150), (-30, -150),
-               (120, 120), (120, -120), (-120, 120), (-120, -120)]
+    return walls
+
+
+def build_wall_list_ffa():
+    """«МЕГАПОЛИС»: центральная площадь, 4 туннеля, кольцевой коридор,
+    4 угловые башни и лабиринты в квадрантах (стиль CS2).
+    Должна совпадать с game.js buildWallListFFA()."""
+    walls = []
+    A = ARENA_HALF
+    T = 3.0
+    H = 16.0
+
+    walls.append((0, A, A, T / 2, H, "outer"))
+    walls.append((0, -A, A, T / 2, H, "outer"))
+    walls.append((A, 0, T / 2, A, H, "outer"))
+    walls.append((-A, 0, T / 2, A, H, "outer"))
+
+    # --- Кольцевая стена (внутренний периметр) на ±172: проёмы у осей и углов ---
+    for sgn in (-1, 1):
+        for (cx, cz, hw, hd) in ((sgn * 172, -102.5, 1.25, 57.5), (sgn * 172, 102.5, 1.25, 57.5),
+                                 (-102.5, sgn * 172, 57.5, 1.25), (102.5, sgn * 172, 57.5, 1.25)):
+            walls.append((cx, cz, hw, hd, 10.0, "bwall"))
+
+    # --- Центральная площадь: квадрат 104x104, входы 16 у каждой оси ---
+    P = 52.0
+    seg = 22.0
+    for sgn in (-1, 1):
+        walls.append((sgn * 30, P, seg, 1.25, 6.5, "cwall"))
+        walls.append((sgn * 30, -P, seg, 1.25, 6.5, "cwall"))
+        walls.append((P, sgn * 30, 1.25, seg, 6.5, "cwall"))
+        walls.append((-P, sgn * 30, 1.25, seg, 6.5, "cwall"))
+
+    # снабжение и укрытия в центре площади
+    walls.append((0, 0, 1.2, 1.2, 1.7, "crate"))
+    for (x, z, hw, hd) in ((16, 0, 2.6, 0.7), (-16, 0, 2.6, 0.7),
+                           (0, 16, 0.7, 2.6), (0, -16, 0.7, 2.6)):
+        walls.append((x, z, hw, hd, 1.4, "cover"))
+    for (x, z) in ((30, 30), (-30, 30), (30, -30), (-30, -30)):
+        walls.append((x, z, 0.9, 0.9, 6.0, "pillar"))
+
+    # --- 4 главных туннеля (осевые коридоры с зигзаг-баффлами) ---
+    for d in (-1, 1):
+        # север/юг
+        walls.append((8, d * 110, 0.8, 48, 4.5, "lane"))
+        walls.append((-8, d * 110, 0.8, 48, 4.5, "lane"))
+        walls.append((-5, d * 88, 5, 0.7, 4.0, "cover"))
+        walls.append((5, d * 110, 5, 0.7, 4.0, "cover"))
+        walls.append((-5, d * 132, 5, 0.7, 4.0, "cover"))
+        # восток/запад
+        walls.append((d * 110, 8, 48, 0.8, 4.5, "lane"))
+        walls.append((d * 110, -8, 48, 0.8, 4.5, "lane"))
+        walls.append((d * 88, -5, 0.7, 5, 4.0, "cover"))
+        walls.append((d * 110, 5, 0.7, 5, 4.0, "cover"))
+        walls.append((d * 132, -5, 0.7, 5, 4.0, "cover"))
+
+    # --- Лабиринты в квадрантах (зеркалятся) ---
+    maze = [
+        (70, 55, 0.8, 30), (70, 95, 35, 0.8), (120, 65, 0.8, 40),
+        (90, 135, 50, 0.8), (100, 151.5, 0.8, 16.5), (155, 62.5, 0.8, 32.5),
+        (150, 60, 20, 0.8), (95, 77.5, 0.8, 17.5), (105, 30, 15, 0.8),
+        (135, 100, 0.8, 20),
+    ]
+    for qx in (-1, 1):
+        for qz in (-1, 1):
+            for (x, z, hw, hd) in maze:
+                walls.append((qx * x, qz * z, hw, hd, 5.0, "bwall"))
+
+    # --- 4 угловые башни (двери внутрь карты) ---
+    for (tx, tz) in ((155, 155), (-155, 155), (155, -155), (-155, -155)):
+        half3 = 6.0
+        th3 = 1.2
+        door_half = 2.6
+        seg3 = half3 - door_half
+        # глухие внешние грани
+        walls.append((tx, tz + math.copysign(half3, tz), 2 * half3, th3 / 2, 8.0, "tower"))
+        walls.append((tx + math.copysign(half3, tx), tz, th3 / 2, 2 * half3, 8.0, "tower"))
+        # внутренние грани с дверьми
+        inner_x = tx - math.copysign(half3, tx)
+        inner_z = tz - math.copysign(half3, tz)
+        walls.append((inner_x, tz + math.copysign(half3 / 2 + door_half / 2, tz),
+                      th3 / 2, seg3 / 2, 8.0, "tower"))
+        walls.append((inner_x, tz - math.copysign(half3 / 2 + door_half / 2, tz),
+                      th3 / 2, seg3 / 2, 8.0, "tower"))
+        walls.append((tx + math.copysign(half3 / 2 + door_half / 2, tx), inner_z,
+                      seg3 / 2, th3 / 2, 8.0, "tower"))
+        walls.append((tx - math.copysign(half3 / 2 + door_half / 2, tx), inner_z,
+                      seg3 / 2, th3 / 2, 8.0, "tower"))
+
+    # --- Укрытия и ящики у входов площади и в кольце ---
+    for d in (-1, 1):
+        walls.append((d * 14, 60, 0.7, 3.0, 1.5, "cover"))
+        walls.append((d * 60, 14, 3.0, 0.7, 1.5, "cover"))
+    clusters = [(40, 70), (70, 40), (-40, 70), (-70, 40),
+                (40, -70), (70, -40), (-40, -70), (-70, -40),
+                (185, 60), (60, 185), (-185, 60), (-60, 185),
+                (185, -60), (60, -185), (-185, -60), (-60, -185)]
+    for (cx, cz) in clusters:
+        for (ox, oz) in ((0.0, 0.0), (2.05, 0.3)):
+            walls.append((cx + ox, cz + oz, 0.85, 0.85, 1.7, "crate"))
+
+    barrels = [(120, 120), (-120, 120), (120, -120), (-120, -120),
+               (0, 62), (0, -62), (62, 0), (-62, 0)]
     for (x, z) in barrels:
         walls.append((x, z, 0.55, 0.55, 2.1, "barrel"))
 
@@ -232,6 +390,17 @@ def wall_at_point(x: float, z: float, clr: float = 0.0) -> bool:
     for i in walls_near(x, z, clr):
         wx, wz, hw, hd, h = WALL_BOXES[i]
         if h < 0.8:
+            continue
+        if abs(x - wx) < hw + clr and abs(z - wz) < hd + clr:
+            return True
+    return False
+
+
+def wall_at_point_h(x: float, z: float, y: float, clr: float = 0.0) -> bool:
+    """Стена на высоте y (снаряды перелетают низкие укрытия)."""
+    for i in walls_near(x, z, clr):
+        wx, wz, hw, hd, h = WALL_BOXES[i]
+        if h < y:
             continue
         if abs(x - wx) < hw + clr and abs(z - wz) < hd + clr:
             return True
@@ -303,7 +472,7 @@ def los_clear(ax, az, bx, bz, use_smoke: bool = True) -> bool:
 # ============================================================
 NAV_STEP = 15.0
 NAV_CLEAR = 2.1
-NAV_LIMIT = 13
+NAV_LIMIT = int(ARENA_HALF // NAV_STEP)
 
 nav_pts: list[tuple[float, float]] = []
 nav_lookup: dict[tuple[int, int], int] = {}
@@ -332,15 +501,29 @@ def build_nav():
             add_pt(ix * NAV_STEP, iz * NAV_STEP)
 
     portals = []
-    portals += [(0, 21), (0, -21), (21, 0), (-21, 0)]
-    for qx in (-1, 1):
-        for qz in (-1, 1):
-            cx, cz = qx * 100.0, qz * 100.0
-            portals += [(cx, cz + 17), (cx, cz - 17), (cx + 17, cz), (cx - 17, cz)]
-    for tx in (-1, 1):
-        for tz in (-1, 1):
-            cx, cz = tx * 162.0, tz * 162.0
-            portals += [(cx, cz + 7), (cx, cz - 7), (cx + 7, cz), (cx - 7, cz)]
+    if MODE == "defense":
+        portals += [(0, 23), (0, -23), (23, 0), (-23, 0)]
+        for qx in (-1, 1):
+            for qz in (-1, 1):
+                cx, cz = qx * 72.0, qz * 72.0
+                portals += [(cx, cz + 10), (cx, cz - 10), (cx + 10, cz), (cx - 10, cz)]
+        for cx, cz in ((72, 0), (-72, 0), (0, 72), (0, -72)):
+            portals += [(cx, cz + 10), (cx, cz - 10), (cx + 10, cz), (cx - 10, cz)]
+        portals += [(0, 135), (0, -135), (135, 0), (-135, 0),
+                    (95, 95), (-95, 95), (95, -95), (-95, -95)]
+    else:
+        # входы площади
+        portals += [(0, 52), (0, -52), (52, 0), (-52, 0)]
+        # туннели (середина и концы)
+        portals += [(0, 110), (0, -110), (110, 0), (-110, 0)]
+        portals += [(0, 160), (0, -160), (160, 0), (-160, 0)]
+        # проёмы кольцевой стены
+        portals += [(0, 172), (0, -172), (172, 0), (-172, 0)]
+        # двери угловых башен
+        for (tx, tz) in ((155, 155), (-155, 155), (155, -155), (-155, -155)):
+            ix = 155 - 6 if tx > 0 else -(155 - 6)
+            iz = 155 - 6 if tz > 0 else -(155 - 6)
+            portals += [(tx, iz), (ix, tz)]
     portal_idx = []
     for (x, z) in portals:
         i = add_pt(x, z, 1.8)
@@ -442,6 +625,33 @@ def find_path(sx: float, sz: float, gx: float, gz: float):
 
 
 # ============================================================
+#  FLOW-FIELD (демоны идут к центру — дёшево для десятков ботов)
+# ============================================================
+flow_dist: list[int] = []
+flow_next: list[int] = []
+
+
+def build_flow_field(gx: float, gz: float) -> None:
+    """BFS-градиент по навмешу от цели. Демоны читают flow_next — O(1) на тик."""
+    global flow_dist, flow_next
+    n = len(nav_pts)
+    flow_dist = [-1] * n
+    flow_next = [-1] * n
+    start = nearest_nav(gx, gz)
+    if start is None:
+        return
+    flow_dist[start] = 0
+    q = deque([start])
+    while q:
+        cur = q.popleft()
+        for nb in nav_adj[cur]:
+            if flow_dist[nb] == -1:
+                flow_dist[nb] = flow_dist[cur] + 1
+                flow_next[nb] = cur
+                q.append(nb)
+
+
+# ============================================================
 #  ГЕОМЕТРИЯ
 # ============================================================
 def ray_sphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r):
@@ -510,6 +720,23 @@ def smoke_ray_dist(ox, oy, oz, dx, dy, dz):
 
 
 def make_spawn() -> tuple[float, float, float]:
+    if MODE == "defense":
+        # игроки всегда в центре крепости, лицом наружу
+        for _ in range(40):
+            x = random.uniform(-15.0, 15.0)
+            z = random.uniform(-15.0, 15.0)
+            if wall_at_point(x, z, 1.2):
+                continue
+            safe = True
+            for p in players.values():
+                if p.get("is_dead") or not p.get("is_bot"):
+                    continue
+                if (p["x"] - x) ** 2 + (p["z"] - z) ** 2 < 12 * 12:
+                    safe = False
+                    break
+            if safe:
+                return x, z, math.atan2(-x, -z)
+        return 0.0, 0.0, 0.0
     for _ in range(60):
         angle = random.uniform(0, math.tau)
         radius = random.uniform(SPAWN_RANGE * 0.5, SPAWN_RANGE)
@@ -525,11 +752,30 @@ def make_spawn() -> tuple[float, float, float]:
                 safe = False
                 break
         if safe:
-            ry = math.atan2(-x, -z)
+            ry = math.atan2(x, z)  # FFA: лицом к центру карты
             return x, z, ry
     x = 0.0
     z = SPAWN_RANGE
-    return x, z, math.atan2(-x, -z)
+    return x, z, math.atan2(x, z)
+
+
+DEMON_SPAWNS = [
+    (0, 135), (0, -135), (135, 0), (-135, 0),
+    (95, 95), (-95, 95), (95, -95), (-95, -95),
+]
+
+
+def make_demon_spawn() -> tuple[float, float, float]:
+    """Спавн демона на краю карты обороны, лицом к центру."""
+    for _ in range(30):
+        sx, sz = random.choice(DEMON_SPAWNS)
+        x = sx + random.uniform(-8, 8)
+        z = sz + random.uniform(-8, 8)
+        if wall_at_point(x, z, 1.5):
+            continue
+        return x, z, math.atan2(-(0 - x), -(0 - z)) + math.pi
+    sx, sz = random.choice(DEMON_SPAWNS)
+    return sx, sz, math.atan2(-(0 - sx), -(0 - sz)) + math.pi
 
 
 def make_medkits():
@@ -543,10 +789,16 @@ def make_medkits():
 
 
 MEDKIT_SPOTS = [
-    (40, 40), (40, -40), (-40, 40), (-40, -40),
-    (0, 60), (0, -60), (60, 0), (-60, 0),
-    (100, 60), (60, 100), (-100, 60), (-60, 100),
-    (100, -60), (60, -100), (-100, -60), (-60, -100),
+    (0, 30), (0, -30), (30, 0), (-30, 0),
+    (0, 105), (0, -105), (105, 0), (-105, 0),
+    (80, 75), (-80, 75), (80, -75), (-80, -75),
+    (155, 120), (-155, 120), (155, -120), (-155, -120),
+    (120, 155), (-120, 155), (120, -155), (-120, -155),
+    (186, 0), (0, 186), (-186, 0), (0, -186),
+] if MODE == "ffa" else [
+    (0, 14), (0, -14), (14, 0), (-14, 0),
+    (72, 14), (-72, 14), (72, -14), (-72, -14),
+    (14, 72), (-14, 72), (14, -72), (-14, -72),
 ]
 
 
@@ -635,6 +887,15 @@ def hist_at(pid: str, t: float):
 # ============================================================
 #  БОЙ
 # ============================================================
+def hitbox_of(p: dict):
+    """(head_off, head_r, body_off, body_r) — у демонов масштабируется по типу."""
+    if p.get("is_demon"):
+        cfg = DEMON_TYPES.get(p.get("dt", "runner"), DEMON_TYPES["runner"])
+        s = float(cfg.get("scale", 1.0))
+        return (2.2 * s, max(0.26, 0.32 * s), 1.05 * s, 0.85 * s)
+    return (HEAD_OFFSET, HEAD_RADIUS, BODY_OFFSET, BODY_RADIUS)
+
+
 def hitscan(shooter_pid: str, dx: float, dy: float, dz: float,
             base_damage: float, falloff: float, rewind_s: float = 0.0):
     s = players.get(shooter_pid)
@@ -662,10 +923,11 @@ def hitscan(shooter_pid: str, dx: float, dy: float, dz: float,
             hpos = hist_at(opid, rewound)
             if hpos:
                 tx, ty, tz = hpos
+        head_off, head_r, body_off, body_r = hitbox_of(op)
         th = ray_sphere(ox, oy, oz, dx, dy, dz,
-                        tx, ty + HEAD_OFFSET, tz, HEAD_RADIUS)
+                        tx, ty + head_off, tz, head_r)
         tb = ray_sphere(ox, oy, oz, dx, dy, dz,
-                        tx, ty + BODY_OFFSET, tz, BODY_RADIUS)
+                        tx, ty + body_off, tz, body_r)
 
         chosen = None
         head = False
@@ -694,13 +956,11 @@ def finish_reload(p: dict) -> None:
     """Завершает перезарядку: переносит патроны из резерва в магазин."""
     if p.get("reload_end", 0.0) <= 0.0 or time.time() < p["reload_end"]:
         return
-    wp = WEAPONS.get(p.get("weapon", "rifle"), WEAPONS["rifle"])
-    need = max(0, wp["mag"] - int(p.get("ammo", 0)))
+    mag = mag_eff(p) if not p.get("is_bot") else weapon_of(p)["mag"]
+    need = max(0, mag - int(p.get("ammo", 0)))
     take = min(int(p.get("reserve", 0)), need)
     p["ammo"] = int(p.get("ammo", 0)) + take
     p["reserve"] = int(p.get("reserve", 0)) - take
-    if p.get("is_bot") and p["reserve"] < wp["mag"]:
-        p["reserve"] = 10 ** 9
     p["reload_end"] = 0.0
 
 
@@ -722,7 +982,8 @@ async def process_shoot(shooter_pid: str, msg: dict) -> None:
     now = time.time()
     weapon = shooter.get("weapon", "rifle")
     wp = WEAPONS.get(weapon, WEAPONS["rifle"])
-    mag = wp["mag"]
+    mag = mag_eff(shooter)
+    reload_time = reload_eff(shooter)
 
     finish_reload(shooter)
     if now < shooter.get("reload_end", 0.0):
@@ -733,14 +994,14 @@ async def process_shoot(shooter_pid: str, msg: dict) -> None:
     ammo = int(shooter.get("ammo", mag))
     if ammo <= 0:
         if int(shooter.get("reserve", 0)) > 0:
-            shooter["reload_end"] = now + wp["reload"]
+            shooter["reload_end"] = now + reload_time
         await send_to(shooter_pid, {"type": "no_ammo"})
         return
     shooter["last_shot"] = now
     ammo -= 1
     shooter["ammo"] = ammo
     if ammo <= 0 and int(shooter.get("reserve", 0)) > 0:
-        shooter["reload_end"] = now + wp["reload"]
+        shooter["reload_end"] = now + reload_time
 
     try:
         ry = float(msg.get("ry", shooter.get("ry", 0.0)))
@@ -785,7 +1046,7 @@ async def process_shoot(shooter_pid: str, msg: dict) -> None:
         target = players.get(tgt_id)
         if not target or target.get("is_dead"):
             continue
-        dmg = info["dmg"]
+        dmg = info["dmg"] * dmg_mult(shooter)
         if info["head"]:
             dmg *= HEADSHOT_MULT
         dmg = int(round(dmg))
@@ -809,14 +1070,17 @@ async def apply_death(target_pid: str, killer_pid: str, headshot: bool, explosio
     if not target or target.get("is_dead"):
         return
     now = time.time()
+    is_demon = bool(target.get("is_demon"))
     target["is_dead"] = True
     target["respawn_at"] = now + RESPAWN_TIME
     target["deaths"] = int(target.get("deaths", 0)) + 1
     target["streak"] = 0
     target["multi"] = 0
-    spawn_pickup(target["x"], target["z"])
+    if not is_demon:
+        spawn_pickup(target["x"], target["z"])
     killer = players.get(killer_pid)
     killer_name = killer.get("name", "?") if killer else "?"
+    points_gain = 0
 
     if killer and killer_pid != target_pid:
         killer["kills"] = int(killer.get("kills", 0)) + 1
@@ -826,6 +1090,9 @@ async def apply_death(target_pid: str, killer_pid: str, headshot: bool, explosio
         else:
             killer["multi"] = 1
         killer["last_kill"] = now
+        if MODE == "defense" and is_demon and not killer.get("is_bot"):
+            points_gain = int(DEF["points_per_kill"])
+            killer["points"] = int(killer.get("points", 0)) + points_gain
         await grant_streak_rewards(killer)
 
     await broadcast({
@@ -837,21 +1104,33 @@ async def apply_death(target_pid: str, killer_pid: str, headshot: bool, explosio
         "headshot": headshot,
         "explosion": explosion,
         "weapon": weapon,
+        "demon": is_demon,
+        "demon_type": target.get("dt", ""),
+        "points_gain": points_gain,
         "shooter_kills": killer["kills"] if killer else 0,
         "shooter_streak": killer.get("streak", 0) if killer else 0,
         "target_deaths": target["deaths"],
         "target_x": target["x"], "target_y": target["y"], "target_z": target["z"],
     })
 
+    # Смерть демона = взрыв с уроном по радиусу (как граната)
+    if is_demon:
+        await demon_explode(target)
+        if MODE == "defense":
+            bots.pop(target_pid, None)
+            players.pop(target_pid, None)
+
 
 async def grant_streak_rewards(killer: dict):
+    if killer.get("is_bot"):
+        return
     streak = int(killer.get("streak", 0))
     multi = int(killer.get("multi", 0))
     pid = killer.get("id")
     gn = killer.setdefault("grenades", dict(GRENADE_START))
     reward = None
     if streak == 3:
-        killer["hp"] = min(100, int(killer["hp"]) + 50)
+        killer["hp"] = min(max_hp_of(killer), int(killer["hp"]) + 50)
         reward = "+50 HP"
     elif streak == 5:
         gn["frag"] = min(GRENADE_CAP["frag"], int(gn.get("frag", 0)) + 2)
@@ -861,7 +1140,7 @@ async def grant_streak_rewards(killer: dict):
         gn["flash"] = min(GRENADE_CAP["flash"], int(gn.get("flash", 0)) + 1)
         reward = "+ДЫМ +ФЛЕШ"
     elif streak == 12:
-        killer["hp"] = 100
+        killer["hp"] = max_hp_of(killer)
         for k in GRENADE_TYPES:
             gn[k] = GRENADE_CAP[k]
         reward = "ПОЛНЫЙ АРСЕНАЛ"
@@ -977,6 +1256,7 @@ async def detonate(gid: str):
     if kind == "flash":
         now = time.time()
         await broadcast({"type": "flash_pop", "x": gx, "y": gy, "z": gz})
+        # ровно 4 секунды слепоты всем в зоне видимости
         for bid, b in bots.items():
             if b.get("is_dead"):
                 continue
@@ -985,15 +1265,7 @@ async def detonate(gid: str):
                 continue
             if not los_clear(gx, gz, b["x"], b["z"], use_smoke=False):
                 continue
-            fx, fz = -math.sin(b["ry"]), -math.cos(b["ry"])
-            if d > 0.01:
-                tox, toz = (gx - b["x"]) / d, (gz - b["z"]) / d
-            else:
-                tox, toz = fx, fz
-            facing = fx * tox + fz * toz
-            strength = max(0.15, facing * 0.5 + 0.6) * (1.0 - d / FLASH_RANGE)
-            dur = 1.0 + 4.5 * strength
-            b["blind_until"] = max(b.get("blind_until", 0.0), now + dur)
+            b["blind_until"] = max(b.get("blind_until", 0.0), now + FLASH_BLIND_TIME)
         return
 
     for pid, p in players.items():
@@ -1018,8 +1290,72 @@ async def detonate(gid: str):
 
 
 # ============================================================
-#  КЛАССЫ БОТОВ
+#  ДЕМОНЫ (замена ботов) — типы, волны, экономика
 # ============================================================
+DEMON_TYPES = {
+    "runner":   {"hp": 60,   "speed": 5.4, "dmg": 12, "scale": 0.85, "explode": 42,
+                 "atk_cd": 1.1, "spit_cd": 3.2, "melee": 2.6, "color": 0xff3322, "label": "БЕГУН"},
+    "brute":    {"hp": 240,  "speed": 2.7, "dmg": 30, "scale": 1.55, "explode": 85,
+                 "atk_cd": 1.9, "spit_cd": 6.0, "melee": 3.0, "color": 0xaa1122, "label": "ГРОМИЛА"},
+    "screamer": {"hp": 95,   "speed": 3.5, "dmg": 10, "scale": 1.0, "explode": 55,
+                 "atk_cd": 1.5, "spit_cd": 4.0, "melee": 2.6, "color": 0xdd66ff, "label": "ВИЗГУН"},
+    "spitter":  {"hp": 85,   "speed": 3.2, "dmg": 14, "scale": 1.0, "explode": 50,
+                 "atk_cd": 1.5, "spit_cd": 2.2, "melee": 2.4, "color": 0x66dd44, "label": "ПЛЕВУН"},
+    "titan":    {"hp": 1600, "speed": 2.3, "dmg": 55, "scale": 2.5, "explode": 140,
+                 "atk_cd": 2.2, "spit_cd": 3.0, "melee": 3.6, "color": 0x660011, "label": "ТИТАН"},
+}
+DEMON_SPIT_RANGE = 34.0
+DEMON_SPIT_FALLOFF = 0.45
+
+wave_state = {"wave": 0, "phase": "idle", "next_at": 0.0,
+              "to_spawn": 0, "spawned": 0, "last_spawn": 0.0}
+
+UPGRADES = {
+    "dmg":    {"costs": [100, 150, 225, 340, 500]},
+    "mag":    {"costs": [80, 120, 180, 270, 400]},
+    "reload": {"costs": [80, 120, 180, 270, 400]},
+    "speed":  {"costs": [60, 90, 135, 200, 300]},
+    "hp":     {"costs": [70, 105, 160, 240, 360]},
+}
+UPGRADE_MAX = 5
+
+
+def upg(p: dict, key: str) -> int:
+    return int(p.get("upgrades", {}).get(key, 0))
+
+
+def weapon_of(p: dict) -> dict:
+    return WEAPONS.get(p.get("weapon", "rifle"), WEAPONS["rifle"])
+
+
+def mag_eff(p: dict) -> int:
+    return int(round(weapon_of(p)["mag"] * (1.0 + 0.15 * upg(p, "mag"))))
+
+
+def reload_eff(p: dict) -> float:
+    return weapon_of(p)["reload"] * (1.0 - 0.08 * upg(p, "reload"))
+
+
+def dmg_mult(p: dict) -> float:
+    return 1.0 + 0.08 * upg(p, "dmg")
+
+
+def max_hp_of(p: dict) -> int:
+    return 100 + 20 * upg(p, "hp")
+
+
+def wave_demon_count(w: int) -> int:
+    return int(DEF["wave_base"]) + (w - 1) * int(DEF["wave_growth"])
+
+
+def wave_type_mix(w: int):
+    mix = ["runner"] * 4 + ["screamer"] * 2 + ["spitter"] * 2
+    if w >= 2:
+        mix += ["brute"] * (1 + w // 3)
+    return mix
+
+
+# --- люди-боты (режим FFA): тактические классы, стреляют из оружия ---
 BOT_CLASSES = {
     "ghost": {"hp": 100, "aim": 0.5,  "fire": 1.7,  "speed": 3.1, "react": (0.30, 0.65), "range": (65, 85), "strafe": 0.5},
     "jugg":  {"hp": 150, "aim": 1.3,  "fire": 0.78, "speed": 4.3, "react": (0.05, 0.16), "range": (8, 15),  "strafe": 0.35},
@@ -1039,14 +1375,18 @@ def bot_base_hp(b) -> int:
     return BOT_CLASSES.get(b.get("cls", "storm"), BOT_CLASSES["storm"])["hp"]
 
 
-def make_bot(_idx: int = 0):
+def make_bot(_idx: int = 0, dtype: str | None = None):
     bid = "bot_" + uuid.uuid4().hex[:6]
-    bot = new_bot(bid)
+    if MODE == "defense":
+        bot = new_demon(bid, dtype)
+    else:
+        bot = new_human_bot(bid)
     bots[bid] = bot
     players[bid] = bot
 
 
-def new_bot(bid: str):
+def new_human_bot(bid: str):
+    """Бот-человек: оружие, стрельба, гранаты, аптечки."""
     x, z, ry = make_spawn()
     weapon = random.choice(BOT_WEAPONS)
     cls = bot_class_for(weapon)
@@ -1055,9 +1395,10 @@ def new_bot(bid: str):
     wp = WEAPONS[weapon]
     return {
         "id": bid, "name": name, "color": random.choice(RED_COLORS), "weapon": weapon,
-        "cls": cls,
+        "cls": cls, "is_demon": False,
         "x": x, "y": 0.0, "z": z, "ry": ry, "rx": 0.0,
-        "hp": cfg["hp"], "kills": 0, "deaths": 0, "is_dead": False, "is_bot": True,
+        "hp": cfg["hp"], "max_hp": cfg["hp"], "kills": 0, "deaths": 0,
+        "is_dead": False, "is_bot": True,
         "streak": 0, "multi": 0, "last_kill": 0.0,
         "ammo": wp["mag"], "reserve": 10 ** 9, "reload_end": 0.0, "last_shot": 0.0,
         "grenades": {"frag": 1, "smoke": 0, "flash": 0}, "last_grenade": 0.0,
@@ -1074,17 +1415,270 @@ def new_bot(bid: str):
     }
 
 
-def bot_respawn(b, now: float):
-    x, z, ry = make_spawn()
-    wp = WEAPONS.get(b.get("weapon", "rifle"), WEAPONS["rifle"])
-    cfg = BOT_CLASSES.get(b.get("cls", "storm"), BOT_CLASSES["storm"])
-    b.update({
+def new_demon(bid: str, dtype: str | None = None):
+    if dtype is None:
+        dtype = random.choice(("runner", "runner", "screamer", "spitter", "brute"))
+    cfg = DEMON_TYPES.get(dtype, DEMON_TYPES["runner"])
+    if MODE == "defense":
+        x, z, ry = make_demon_spawn()
+        wave = max(1, int(wave_state.get("wave", 1)))
+    else:
+        x, z, ry = make_spawn()
+        wave = 1
+    hp_mult = min(float(DEF["hp_cap"]), 1.0 + float(DEF["hp_growth"]) * (wave - 1))
+    spd_mult = min(float(DEF["speed_cap"]), 1.0 + float(DEF["speed_growth"]) * (wave - 1))
+    dmg_mult_w = min(float(DEF["dmg_cap"]), 1.0 + float(DEF["dmg_growth"]) * (wave - 1))
+    hp = int(cfg["hp"] * hp_mult)
+    return {
+        "id": bid, "name": cfg["label"] + " " + uuid.uuid4().hex[3:6].upper(),
+        "color": cfg["color"], "weapon": dtype,
+        "dt": dtype, "cls": dtype, "is_demon": True,
         "x": x, "y": 0.0, "z": z, "ry": ry, "rx": 0.0,
-        "hp": cfg["hp"], "is_dead": False, "ammo": wp["mag"], "reload_end": 0.0,
-        "grenades": {"frag": 1, "smoke": 0, "flash": 0},
-        "target_pid": None, "path": None, "path_i": 0, "repath_at": 0.0,
-        "blind_until": 0.0, "stuck": 0.0, "last_x": x, "last_z": z,
-    })
+        "hp": hp, "max_hp": hp, "kills": 0, "deaths": 0, "is_dead": False, "is_bot": True,
+        "streak": 0, "multi": 0, "last_kill": 0.0,
+        "ammo": 0, "reserve": 0, "reload_end": 0.0, "last_shot": 0.0,
+        "grenades": {}, "last_grenade": 0.0,
+        "respawn_at": 0.0,
+        "target_pid": None, "engage_at": 0.0,
+        "path": None, "path_i": 0, "repath_at": 0.0, "goal": None,
+        "flow_i": None, "flow_at": 0.0,
+        "blind_until": 0.0, "strafe_dir": random.choice((-1, 1)), "strafe_at": 0.0,
+        "speed": cfg["speed"] * spd_mult,
+        "dmg": cfg["dmg"] * dmg_mult_w,
+        "atk_cd": cfg["atk_cd"], "spit_cd": cfg["spit_cd"],
+        "melee": cfg["melee"],
+        "last_atk": 0.0, "last_spit": 0.0,
+        "anim": "walk", "anim_until": 0.0,
+        "scream_at": time.time() + random.uniform(4.0, 14.0),
+        "rage_until": 0.0,
+        "stuck": 0.0, "last_x": x, "last_z": z,
+        "vx": 0.0, "vz": 0.0,
+    }
+
+
+def bot_respawn(b, now: float):
+    """Респавн ботов (FFA: люди; демоны в обороне не возрождаются)."""
+    fresh = new_human_bot(b["id"])
+    keep = {k: b.get(k) for k in ("kills", "deaths")}
+    b.update(fresh)
+    b.update(keep)
+    b["respawn_at"] = 0.0
+
+
+async def demon_explode(b: dict) -> None:
+    """Смерть демона: урон по радиусу, как граната."""
+    cfg = DEMON_TYPES.get(b.get("dt", "runner"), DEMON_TYPES["runner"])
+    radius = 7.0 if MODE == "defense" else 5.0
+    base = cfg["explode"] * (0.6 if MODE == "ffa" else 1.0)
+    gx, gz = b["x"], b["z"]
+    await broadcast({"type": "demon_explode", "id": b.get("id"),
+                     "x": round(gx, 2), "z": round(gz, 2), "r": radius})
+    for pid, p in list(players.items()):
+        if p.get("is_bot") or p.get("is_dead"):
+            continue
+        d = math.hypot(p["x"] - gx, p["z"] - gz)
+        if d > radius:
+            continue
+        if not los_clear(gx, gz, p["x"], p["z"], use_smoke=False) and d > 2.0:
+            continue
+        dmg = int(base * (1.0 - d / radius))
+        if dmg <= 0:
+            continue
+        p["hp"] = max(0, int(p["hp"]) - dmg)
+        await broadcast({"type": "hit", "shooter": b.get("id"), "target": pid,
+                         "hp": p["hp"], "damage": dmg, "headshot": False, "explosion": True})
+        if p["hp"] <= 0:
+            await apply_death(pid, b.get("id"), False, True, "ДЕМОН")
+
+
+acid_globs: dict[str, dict] = {}
+ACID_SPEED = 26.0
+ACID_RADIUS = 2.2
+
+
+async def demon_acid_spit(b: dict, target: dict) -> None:
+    """Плевун выпускает летящий кислотный снаряд (его можно уклонять)."""
+    now = time.time()
+    b["last_spit"] = now
+    b["anim"] = "spit"
+    b["anim_until"] = now + 0.55
+    dx = target["x"] - b["x"]
+    dz = target["z"] - b["z"]
+    d = math.hypot(dx, dz) or 1.0
+    lead = d / ACID_SPEED
+    tx = target["x"] + target.get("vx", 0.0) * lead
+    tz = target["z"] + target.get("vz", 0.0) * lead
+    dx = tx - b["x"]
+    dz = tz - b["z"]
+    d = math.hypot(dx, dz) or 1.0
+    gid = "ac_" + uuid.uuid4().hex[:6]
+    acid_globs[gid] = {
+        "id": gid, "owner": b.get("id"),
+        "x": b["x"] + dx / d * 0.8, "y": 1.6, "z": b["z"] + dz / d * 0.8,
+        "vx": dx / d * ACID_SPEED, "vz": dz / d * ACID_SPEED,
+        "dmg": max(6, int(b.get("dmg", 12) * 1.2)),
+        "until": now + 3.0,
+    }
+    await broadcast({"type": "acid_spawn", "id": gid, "owner": b.get("id"),
+                     "x": round(acid_globs[gid]["x"], 2), "y": 1.6,
+                     "z": round(acid_globs[gid]["z"], 2),
+                     "vx": round(acid_globs[gid]["vx"], 2),
+                     "vz": round(acid_globs[gid]["vz"], 2)})
+
+
+async def step_acid(dt: float) -> None:
+    now = time.time()
+    pops = []
+    for gid, g in list(acid_globs.items()):
+        if now >= g["until"]:
+            pops.append((gid, False))
+            continue
+        nx = g["x"] + g["vx"] * dt
+        nz = g["z"] + g["vz"] * dt
+        hit = False
+        for pid, p in players.items():
+            if p.get("is_bot") or p.get("is_dead"):
+                continue
+            if math.hypot(p["x"] - nx, p["z"] - nz) < 0.9:
+                hit = True
+                break
+        if hit or wall_at_point_h(nx, nz, 1.4, 0.2):
+            pops.append((gid, hit))
+            continue
+        g["x"], g["z"] = nx, nz
+    for gid, hit_player in pops:
+        g = acid_globs.pop(gid, None)
+        if not g:
+            continue
+        await broadcast({"type": "acid_pop", "id": gid,
+                         "x": round(g["x"], 2), "y": 0.6, "z": round(g["z"], 2),
+                         "hit": hit_player})
+        for pid, p in list(players.items()):
+            if p.get("is_bot") or p.get("is_dead"):
+                continue
+            d = math.hypot(p["x"] - g["x"], p["z"] - g["z"])
+            if d > ACID_RADIUS:
+                continue
+            dmg = int(g["dmg"] * (1.0 - d / ACID_RADIUS))
+            if dmg <= 0:
+                continue
+            p["hp"] = max(0, int(p["hp"]) - dmg)
+            await broadcast({"type": "hit", "shooter": g["owner"], "target": pid,
+                             "hp": p["hp"], "damage": dmg, "headshot": False})
+            if p["hp"] <= 0:
+                await apply_death(pid, g["owner"], False, False, "КИСЛОТА")
+
+
+async def demon_attack(b: dict, target: dict, kind: str) -> None:
+    """Атаки демона: claw (когти), slam (удар по земле с волной)."""
+    now = time.time()
+    base = int(b.get("dmg", 10))
+
+    if kind == "slam":
+        radius = 7.0 if b.get("dt") == "titan" else 5.0
+        b["last_atk"] = now
+        b["anim"] = "slam"
+        b["anim_until"] = now + 0.9
+        await broadcast({"type": "demon_attack", "id": b.get("id"), "kind": "slam",
+                         "x": round(b["x"], 2), "z": round(b["z"], 2), "r": radius})
+        for pid, p in list(players.items()):
+            if p.get("is_bot") or p.get("is_dead"):
+                continue
+            d = math.hypot(p["x"] - b["x"], p["z"] - b["z"])
+            if d > radius:
+                continue
+            dmg = int(base * 1.4 * (1.0 - 0.6 * d / radius))
+            if dmg <= 0:
+                continue
+            p["hp"] = max(0, int(p["hp"]) - dmg)
+            await broadcast({"type": "hit", "shooter": b.get("id"), "target": pid,
+                             "hp": p["hp"], "damage": dmg, "headshot": False,
+                             "explosion": True})
+            if p["hp"] <= 0:
+                await apply_death(pid, b.get("id"), False, True, "УДАР")
+        return
+
+    # когти
+    b["last_atk"] = now
+    b["anim"] = "attack"
+    b["anim_until"] = now + 0.55
+    await broadcast({"type": "demon_attack", "id": b.get("id"), "kind": "claw",
+                     "target": target.get("id"),
+                     "x": round(b["x"], 2), "z": round(b["z"], 2),
+                     "tx": round(target["x"], 2), "tz": round(target["z"], 2)})
+    target["hp"] = max(0, int(target["hp"]) - base)
+    if target["hp"] <= 0:
+        await apply_death(target.get("id"), b.get("id"), False, False, "КОГТИ")
+    else:
+        await broadcast({"type": "hit", "shooter": b.get("id"), "target": target.get("id"),
+                         "hp": target["hp"], "damage": base, "headshot": False})
+
+
+async def wave_tick(now: float, dt: float) -> None:
+    """Волны режима обороны: перерыв -> старт -> спавн -> зачистка -> перерыв."""
+    if MODE != "defense":
+        return
+    st = wave_state
+    if st["phase"] == "idle":
+        if clients:
+            st["phase"] = "break"
+            st["next_at"] = now + float(DEF["first_break_seconds"])
+            await broadcast({"type": "wave", "state": "break", "wave": 1,
+                             "next_in": int(DEF["first_break_seconds"])})
+        return
+
+    if st["phase"] == "break":
+        if now >= st["next_at"]:
+            st["wave"] += 1
+            st["phase"] = "active"
+            st["to_spawn"] = wave_demon_count(st["wave"])
+            st["spawned"] = 0
+            st["last_spawn"] = now
+            await broadcast({"type": "wave", "state": "start", "wave": st["wave"],
+                             "count": st["to_spawn"]})
+            if st["wave"] % 5 == 0:
+                make_bot(dtype="titan")
+                st["spawned"] += 1
+        return
+
+    if st["phase"] == "active":
+        humans = [players[p] for p in clients if p in players]
+        if humans and all(p.get("is_dead") for p in humans):
+            st["phase"] = "defeat"
+            st["next_at"] = now + float(DEF["defeat_restart_seconds"])
+            await broadcast({"type": "wave", "state": "defeat", "wave": st["wave"]})
+            return
+
+        if (st["spawned"] < st["to_spawn"] and len(bots) < int(DEF["max_alive"])
+                and now - st["last_spawn"] >= float(DEF["spawn_interval"])):
+            make_bot(dtype=random.choice(wave_type_mix(st["wave"])))
+            st["spawned"] += 1
+            st["last_spawn"] = now
+
+        if st["spawned"] >= st["to_spawn"] and len(bots) == 0:
+            st["phase"] = "break"
+            st["next_at"] = now + float(DEF["break_seconds"])
+            for pid in list(clients):
+                p = players.get(pid)
+                if p and not p.get("is_dead"):
+                    p["hp"] = min(max_hp_of(p), int(p["hp"]) + int(DEF["heal_on_wave_clear"]))
+                    p["grenades"] = dict(GRENADE_START)
+                    p["reserve"] = mag_eff(p) * RESERVE_MAGS
+            await broadcast({"type": "wave", "state": "clear", "wave": st["wave"],
+                             "next_in": int(DEF["break_seconds"])})
+        return
+
+    if st["phase"] == "defeat":
+        if now >= st["next_at"]:
+            for bid in list(bots.keys()):
+                bots.pop(bid, None)
+                players.pop(bid, None)
+            st["wave"] = 0
+            st["phase"] = "break"
+            st["next_at"] = now + float(DEF["first_break_seconds"])
+            await broadcast({"type": "wave", "state": "reset",
+                             "next_in": int(DEF["first_break_seconds"])})
+        return
 
 
 def bot_move(b, dx: float, dz: float, speed: float, dt: float):
@@ -1148,12 +1742,12 @@ def bot_repath(b, gx: float, gz: float, now: float):
     b["stuck"] = 0.0
 
 
-async def update_bots_async(dt: float):
-    now = time.time()
+async def update_human_bots(dt: float, now: float):
+    """FFA: боты-люди — стреляют из оружия, стрейфят, лечатся, патрулируют."""
     human_count = len(clients)
-    desired = min(16, max(8, human_count * 5))
+    desired = min(MAX_BOTS, max(8, human_count * 5))
     while len(bots) < desired:
-        make_bot(len(bots))
+        make_bot()
     while len(bots) > desired:
         bid = next(iter(bots))
         bots.pop(bid, None)
@@ -1189,7 +1783,7 @@ async def update_bots_async(dt: float):
             bot_move(b, dx, dz, 2.0, dt)
             continue
 
-        wp = WEAPONS.get(b["weapon"], WEAPONS["rifle"])
+        wp = weapon_of(b)
         mag = wp["mag"]
         finish_reload(b)
         if b.get("ammo", mag) <= 0 and b.get("reload_end", 0.0) <= 0:
@@ -1328,7 +1922,7 @@ async def update_bots_async(dt: float):
                     gx = random.uniform(-ARENA_HALF * 0.88, ARENA_HALF * 0.88)
                     gz = random.uniform(-ARENA_HALF * 0.88, ARENA_HALF * 0.88)
                     if wall_at_point(gx, gz, 2.0):
-                        gx, gz = 0.0, 120.0
+                        gx, gz = 0.0, ARENA_HALF * 0.6
                     bot_repath(b, gx, gz, now)
                 bot_follow_path(b, dt, cfg["speed"] * 0.95)
 
@@ -1342,6 +1936,160 @@ async def update_bots_async(dt: float):
             print("[BOT ACT] err:", e)
 
 
+async def update_demon_bots(dt: float, now: float):
+    """Оборона: демоны — когти, слэм, визг и кислотные снаряды (без стрельбы)."""
+    pending = []
+
+    for bid, b in list(bots.items()):
+        if b["is_dead"]:
+            continue
+
+        moved = math.hypot(b["x"] - b.get("last_x", b["x"]), b["z"] - b.get("last_z", b["z"]))
+        b["last_x"], b["last_z"] = b["x"], b["z"]
+        if moved < 0.6 * dt * 3:
+            b["stuck"] += dt
+        else:
+            b["stuck"] = max(0.0, b.get("stuck", 0.0) - dt)
+        if b.get("stuck", 0.0) > 0.8:
+            b["stuck"] = 0.0
+            b["path"] = None
+            b["flow_i"] = None
+
+        # ослеплён флешем — слепо мечется
+        if now < b.get("blind_until", 0.0):
+            b["anim"] = "stumble"
+            b["anim_until"] = now + 0.3
+            b["ry"] += random.uniform(-1.0, 1.0) * dt * 2.5
+            dx = -math.sin(b["ry"])
+            dz = -math.cos(b["ry"])
+            if wall_at_point(b["x"] + dx, b["z"] + dz, 0.55):
+                b["ry"] += math.pi * 0.7
+            bot_move(b, dx, dz, b.get("speed", 3.0) * 0.5, dt)
+            continue
+
+        # крик: у визгуна — звуковая атака по площади, у остальных — устрашение
+        if now >= b.get("scream_at", 1e18):
+            b["scream_at"] = now + random.uniform(9.0, 20.0)
+            b["anim"] = "scream"
+            b["anim_until"] = now + 1.1
+            await broadcast({"type": "demon_scream", "id": bid,
+                             "x": round(b["x"], 2), "z": round(b["z"], 2),
+                             "kind": b.get("dt", "runner")})
+            if b.get("dt") == "screamer":
+                for pid, p in list(players.items()):
+                    if p.get("is_bot") or p.get("is_dead"):
+                        continue
+                    d = math.hypot(p["x"] - b["x"], p["z"] - b["z"])
+                    if d < 13.0 and los_clear(b["x"], b["z"], p["x"], p["z"], use_smoke=False):
+                        dmg = max(3, int(b.get("dmg", 10) * 0.6 * (1.0 - d / 13.0)))
+                        p["hp"] = max(0, int(p["hp"]) - dmg)
+                        await broadcast({"type": "hit", "shooter": bid, "target": pid,
+                                         "hp": p["hp"], "damage": dmg, "headshot": False})
+                        if p["hp"] <= 0:
+                            await apply_death(pid, bid, False, False, "ВИЗГ")
+                for ob in bots.values():
+                    if ob is b or ob.get("is_dead"):
+                        continue
+                    if math.hypot(ob["x"] - b["x"], ob["z"] - b["z"]) < 22.0:
+                        ob["rage_until"] = max(ob.get("rage_until", 0.0), now + 5.0)
+
+        # поиск цели: только люди
+        best = None
+        best_score = 1e18
+        for pid, p in players.items():
+            if pid == bid or p.get("is_bot") or p.get("is_dead"):
+                continue
+            d = math.hypot(p["x"] - b["x"], p["z"] - b["z"])
+            if d > 95:
+                continue
+            if not los_clear(b["x"], b["z"], p["x"], p["z"]):
+                continue
+            if d < best_score:
+                best_score = d
+                best = (p, d)
+
+        speed = b.get("speed", 3.0)
+        if now < b.get("rage_until", 0.0):
+            speed *= 1.18
+
+        if best:
+            t, dist = best
+            if b.get("target_pid") != t.get("id"):
+                b["target_pid"] = t.get("id")
+                b["engage_at"] = now + random.uniform(0.15, 0.45)
+
+            dx = t["x"] - b["x"]
+            dz = t["z"] - b["z"]
+            target_ry = math.atan2(-dx, -dz)
+            d_ang = (target_ry - b["ry"] + math.pi) % (2 * math.pi) - math.pi
+            b["ry"] += d_ang * min(1.0, dt * (7.0 - min(4.0, dist / 20.0)))
+            b["rx"] = 0.0
+
+            if now >= b.get("engage_at", 0.0) and abs(d_ang) < 0.35:
+                if dist <= b.get("melee", 2.6) and now - b.get("last_atk", 0.0) >= b.get("atk_cd", 1.5):
+                    kind = "claw"
+                    if b.get("dt") in ("brute", "titan") and random.random() < 0.45:
+                        kind = "slam"
+                    pending.append((bid, t, kind))
+                elif (5.0 < dist <= DEMON_SPIT_RANGE and b.get("dt") in ("spitter", "screamer")
+                      and now - b.get("last_spit", 0.0) >= b.get("spit_cd", 3.0)):
+                    pending.append((bid, t, "acid"))
+
+            mvx, mvz = dx, dz
+            if dist < 1.6:
+                mvx = mvz = 0.0
+            bot_move(b, mvx, mvz, speed, dt)
+        else:
+            b["target_pid"] = None
+            # идём по flow-field к центру крепости
+            if b.get("flow_i") is None or now >= b.get("flow_at", 0.0):
+                b["flow_i"] = nearest_nav(b["x"], b["z"])
+                b["flow_at"] = now + 0.8
+            i = b.get("flow_i")
+            if i is not None and 0 <= i < len(flow_next):
+                j = flow_next[i]
+                if j is not None and j >= 0:
+                    tx, tz = nav_pts[j]
+                    ddx, ddz = tx - b["x"], tz - b["z"]
+                    if math.hypot(ddx, ddz) < 3.0:
+                        b["flow_i"] = j
+                        b["flow_at"] = 0.0
+                    target_ry = math.atan2(-ddx, -ddz)
+                    d_ang = (target_ry - b["ry"] + math.pi) % (2 * math.pi) - math.pi
+                    b["ry"] += d_ang * min(1.0, dt * 4.0)
+                    bot_move(b, ddx, ddz, speed * 0.95, dt)
+                else:
+                    if now >= b.get("repath_at", 0.0):
+                        b["repath_at"] = now + random.uniform(1.5, 3.0)
+                        b["goal"] = (random.uniform(-14, 14), random.uniform(-14, 14))
+                    if b.get("goal"):
+                        bot_move(b, b["goal"][0] - b["x"], b["goal"][1] - b["z"],
+                                 speed * 0.7, dt)
+
+        if now >= b.get("anim_until", 0.0):
+            b["anim"] = "walk" if moved > 0.6 * dt * 3 else "idle"
+
+    for bid, target, kind in pending:
+        try:
+            b = bots.get(bid)
+            if not b or b.get("is_dead") or not target or target.get("is_dead"):
+                continue
+            if kind == "acid":
+                await demon_acid_spit(b, target)
+            else:
+                await demon_attack(b, target, kind)
+        except Exception as e:
+            print("[DEMON ATK] err:", e)
+
+
+async def update_bots_async(dt: float):
+    now = time.time()
+    if MODE == "ffa":
+        await update_human_bots(dt, now)
+    else:
+        await update_demon_bots(dt, now)
+
+
 async def bots_tick():
     last = time.time()
     while True:
@@ -1351,6 +2099,8 @@ async def bots_tick():
         last = now
         try:
             await step_grenades(dt)
+            await step_acid(dt)
+            await wave_tick(now, dt)
             await update_bots_async(dt)
         except Exception as e:
             print("[BOT] err:", e)
@@ -1374,16 +2124,16 @@ async def broadcast_loop() -> None:
 
             if p.get("is_dead") and now >= p.get("respawn_at", 0.0) and not p.get("is_bot"):
                 x, z, ry = make_spawn()
-                wp = WEAPONS.get(p.get("weapon", "rifle"), WEAPONS["rifle"])
                 p["x"] = round(x, 3)
                 p["y"] = 0.0
                 p["z"] = round(z, 3)
                 p["ry"] = round(ry, 4)
                 p["rx"] = 0.0
-                p["hp"] = 100
+                p["hp"] = max_hp_of(p)
+                p["max_hp"] = max_hp_of(p)
                 p["is_dead"] = False
-                p["ammo"] = wp["mag"]
-                p["reserve"] = wp["mag"] * RESERVE_MAGS
+                p["ammo"] = mag_eff(p)
+                p["reserve"] = mag_eff(p) * RESERVE_MAGS
                 p["reload_end"] = 0.0
                 p["grenades"] = dict(GRENADE_START)
                 p.pop("respawn_at", None)
@@ -1446,14 +2196,15 @@ async def ws_handler(ws) -> None:
             "id": pid,
             "x": round(x, 3), "y": 0.0, "z": round(z, 3),
             "ry": round(ry, 4), "rx": 0.0,
-            "hp": 100, "kills": 0, "deaths": 0, "is_dead": False,
+            "hp": 100, "max_hp": 100, "kills": 0, "deaths": 0, "is_dead": False,
             "color": color, "name": name,
             "weapon": weapon, "last_shot": 0.0, "last_grenade": 0.0,
-            "is_bot": False, "cls": "storm",
+            "is_bot": False, "cls": "hunter",
             "ammo": wp["mag"], "reserve": wp["mag"] * RESERVE_MAGS,
             "reload_end": 0.0, "reload_left": 0.0,
             "grenades": dict(GRENADE_START),
             "streak": 0, "multi": 0, "last_kill": 0.0,
+            "points": 0, "upgrades": {k: 0 for k in UPGRADES},
             "vx": 0.0, "vz": 0.0,
         }
         clients[pid] = ws
@@ -1465,6 +2216,10 @@ async def ws_handler(ws) -> None:
             "ry": players[pid]["ry"], "rx": 0.0,
             "hp": 100, "kills": 0, "is_dead": False,
             "weapon": weapon,
+            "mode": MODE,
+            "wave": wave_state.get("wave", 0),
+            "wave_phase": wave_state.get("phase", "idle"),
+            "break_seconds": int(DEF["break_seconds"]),
             "players": players,
             "grenades": list(grenades.values()),
             "medkits": list(medkits.values()),
@@ -1512,15 +2267,44 @@ async def ws_handler(ws) -> None:
 
             elif mt == "reload" and pid in players:
                 p = players[pid]
-                wp2 = WEAPONS.get(p.get("weapon", "rifle"), WEAPONS["rifle"])
+                mag2 = mag_eff(p)
+                rl2 = reload_eff(p)
                 now_t = time.time()
                 if (not p.get("is_dead") and p.get("reload_end", 0.0) <= now_t
-                        and int(p.get("ammo", wp2["mag"])) < wp2["mag"]
+                        and int(p.get("ammo", mag2)) < mag2
                         and int(p.get("reserve", 0)) > 0):
-                    p["reload_end"] = now_t + wp2["reload"]
+                    p["reload_end"] = now_t + rl2
                     await broadcast({"type": "reload", "player": pid,
-                                     "duration": wp2["reload"], "ammo": p["ammo"],
-                                     "mag": wp2["mag"]})
+                                     "duration": rl2, "ammo": p["ammo"],
+                                     "mag": mag2})
+
+            elif mt == "upgrade" and pid in players:
+                p = players[pid]
+                key = str(msg.get("id", ""))
+                u = UPGRADES.get(key)
+                if MODE != "defense":
+                    await send_to(pid, {"type": "upgrade_deny", "id": key, "reason": "mode"})
+                elif not u or p.get("is_dead"):
+                    await send_to(pid, {"type": "upgrade_deny", "id": key, "reason": "bad"})
+                else:
+                    lvl = upg(p, key)
+                    if lvl >= UPGRADE_MAX:
+                        await send_to(pid, {"type": "upgrade_deny", "id": key, "reason": "max"})
+                    else:
+                        cost = int(u["costs"][lvl])
+                        if int(p.get("points", 0)) < cost:
+                            await send_to(pid, {"type": "upgrade_deny", "id": key, "reason": "points"})
+                        else:
+                            p["points"] = int(p.get("points", 0)) - cost
+                            p.setdefault("upgrades", {})[key] = lvl + 1
+                            if key == "hp":
+                                p["hp"] = min(max_hp_of(p), int(p["hp"]) + 20)
+                            if key == "mag":
+                                p["ammo"] = min(int(p.get("ammo", 0)) + int(round(weapon_of(p)["mag"] * 0.15)), mag_eff(p))
+                            await send_to(pid, {"type": "upgrade_ok", "id": key,
+                                                "lvl": lvl + 1, "points": p["points"],
+                                                "max_hp": max_hp_of(p), "mag": mag_eff(p)})
+                            await broadcast({"type": "upgrade_fx", "player": pid, "id": key})
 
             elif mt == "grenade" and pid in players:
                 await process_grenade(pid, msg)
@@ -1539,7 +2323,7 @@ async def ws_handler(ws) -> None:
                 p = players.get(pid)
                 if m and m["available"] and p and not p.get("is_dead"):
                     if math.hypot(p["x"] - m["x"], p["z"] - m["z"]) < 2.5:
-                        heal = min(MEDKIT_HEAL, 100 - int(p["hp"]))
+                        heal = min(MEDKIT_HEAL, max_hp_of(p) - int(p["hp"]))
                         if heal > 0:
                             p["hp"] = int(p["hp"]) + heal
                             m["available"] = False
@@ -1554,8 +2338,7 @@ async def ws_handler(ws) -> None:
                 pk = pickups.get(pkid)
                 if pk and not p.get("is_dead"):
                     if math.hypot(p["x"] - pk["x"], p["z"] - pk["z"]) < 2.6:
-                        wp3 = WEAPONS.get(p.get("weapon", "rifle"), WEAPONS["rifle"])
-                        p["reserve"] = int(p.get("reserve", 0)) + wp3["mag"] * 2
+                        p["reserve"] = int(p.get("reserve", 0)) + mag_eff(p) * 2
                         pickups.pop(pkid, None)
                         await broadcast({"type": "pickup_taken", "id": pkid,
                                          "player": pid, "reserve": p["reserve"]})
@@ -1594,24 +2377,32 @@ async def main() -> None:
 
     t0 = time.time()
     build_nav()
+    if MODE == "defense":
+        build_flow_field(0.0, 0.0)
     print(f"[NAV] Точек: {len(nav_pts)}  |  стен в хеше: "
           f"{sum(len(v) for v in _wall_cells.values())} ячеек: {len(_wall_cells)}  |  {time.time()-t0:.2f}с")
 
-    for _ in range(6):
-        make_bot(len(bots))
+    if MODE == "ffa":
+        for _ in range(6):
+            make_bot()
 
     ip = get_local_ip()
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT,
                                 ping_interval=20, max_size=2**20):
         print("=" * 64)
-        print(" NEON STICKMAN SHOT v4.0 — MAXIMUM NEON ARENA")
+        print(" NEON STICKMAN SHOT v2.0 — НОЧЬ ДЕМОНОВ")
         print("=" * 64)
+        print(f"  Режим:         {MODE.upper()}")
         print(f"  Локально:      http://localhost:{HTTP_PORT}")
         print(f"  По сети (LAN): http://{ip}:{HTTP_PORT}")
         print(f"  WebSocket:     ws://{ip}:{WS_PORT}")
         print(f"  Tickrate:      {TICK_RATE} Hz  |  Арена: {int(ARENA_HALF*2)}x{int(ARENA_HALF*2)}")
-        print(f"  Стены:         {len(WALLS)}  |  Аптечки: {len(medkits)}  |  Боты: {len(bots)}/{MAX_BOTS}")
-        print(f"  Классы ботов:  ghost / jugg / storm  |  Резерв: {RESERVE_MAGS} магазина")
+        print(f"  Стены:         {len(WALLS)}  |  Аптечки: {len(medkits)}")
+        if MODE == "defense":
+            print(f"  Волны:         база {DEF['wave_base']}, +{DEF['wave_growth']}/волна, "
+                  f"перерыв {DEF['break_seconds']}с, {DEF['points_per_kill']} очков/килл")
+        else:
+            print(f"  Демоны:        до {MAX_BOTS}  |  Резерв: {RESERVE_MAGS} магазина")
         print(f"  Сетка:         {GRID_CELL:.0f}x{GRID_CELL:.0f}, {len(_wall_cells)} ячеек  |  Lagcomp: да")
         print("=" * 64)
         asyncio.create_task(broadcast_loop())

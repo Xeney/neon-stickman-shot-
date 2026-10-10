@@ -1,0 +1,25 @@
+{
+    "mode": "ffa",
+
+    "ffa": {
+        "max_bots": 16
+    },
+
+    "defense": {
+        "break_seconds": 30,
+        "first_break_seconds": 12,
+        "points_per_kill": 10,
+        "wave_base": 6,
+        "wave_growth": 3,
+        "max_alive": 48,
+        "spawn_interval": 1.4,
+        "hp_growth": 0.12,
+        "hp_cap": 4.0,
+        "speed_growth": 0.02,
+        "speed_cap": 1.4,
+        "dmg_growth": 0.05,
+        "dmg_cap": 2.0,
+        "defeat_restart_seconds": 10,
+        "heal_on_wave_clear": 50
+    }
+}
