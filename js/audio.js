@@ -209,6 +209,16 @@ export const AU = {
         this.noiseHit(0, 0.05, vol, 700, 250, pan, 'lowpass', 1.2);
     },
 
+    jump() {
+        this.noiseHit(0, 0.12, 0.13, 500, 1300, 0, 'bandpass', 1.5);
+        this.toneHit(0, 0.1, 0.07, 190, 270, 'sine', 0);
+    },
+
+    land(vol = 0.12) {
+        this.noiseHit(0, 0.09, Math.max(0.05, vol), 420, 140, 0, 'lowpass', 1.2);
+        this.toneHit(0, 0.09, Math.max(0.03, vol * 0.7), 120, 68, 'sine', 0);
+    },
+
     ui() {
         this.toneHit(0, 0.06, 0.1, 900, 1200, 'square', 0);
     },

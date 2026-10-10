@@ -8,11 +8,11 @@ import { buildWeaponModel, updateViewmodel, inspectWeapon, initShowcase,
          setShowcaseWeapon, updateShowcase } from './js/weapons.js';
 import { updateRemotePlayers } from './js/characters.js';
 import { buildDecor, updateDecor } from './js/decor.js';
-import { buildSky, updateSky } from './js/sky.js';
+import { buildSky, updateSky, setNightMode } from './js/sky.js';
 import { buildMinimapBg, drawMinimap, updateHUD, renderScoreboard, updateDamageIndicator,
          buildHoloBoard, drawHoloBoard, holoBoard, updateGrenadeHud, flashChip,
          buildAmmoPips, toggleShop, buyUpgrade, UPGRADE_DEFS,
-         nukeModalOpen, nukeUse, nukeDeny } from './js/hud.js';
+         nukeModalOpen, nukeUse, nukeDeny, voteOpen, castVote } from './js/hud.js';
 import { connect, sendMsg, sendState, setJoinWeapon, ws } from './js/net.js';
 import { loadSettings, initSettingsUI, applyGraphics, GFX,
          openSettings, closeSettings, settingsOpen } from './js/settings.js';
@@ -104,13 +104,19 @@ function initThree() {
 
     let sun;
     if (defense) {
-        scene.add(new THREE.AmbientLight(0x664455, 0.72));
-        scene.add(new THREE.HemisphereLight(0x442233, 0x14080c, 0.65));
+        const amb = new THREE.AmbientLight(0x664455, 0.72);
+        const hemi = new THREE.HemisphereLight(0x442233, 0x14080c, 0.65);
+        scene.add(amb, hemi);
+        G.ambient = amb;
+        G.hemi = hemi;
         sun = new THREE.DirectionalLight(0xdd9999, 0.7);
         sun.position.set(-120, 220, -80);
     } else {
-        scene.add(new THREE.AmbientLight(0xbcd4ee, 0.9));
-        scene.add(new THREE.HemisphereLight(0xfff4e0, 0x556677, 1.0));
+        const amb = new THREE.AmbientLight(0xbcd4ee, 0.9);
+        const hemi = new THREE.HemisphereLight(0xfff4e0, 0x556677, 1.0);
+        scene.add(amb, hemi);
+        G.ambient = amb;
+        G.hemi = hemi;
         sun = new THREE.DirectionalLight(0xfff2d8, 1.6);
         sun.position.set(140, 260, 90);
     }
@@ -446,7 +452,8 @@ function buildMap() {
     }
 
     buildDecor(defense);
-    buildSky(defense);
+    buildSky();
+    setNightMode(defense);
 }
 
 function addDefenseDecor() {
@@ -776,6 +783,12 @@ function initInput() {
         }
         if (pauseOpen() || settingsOpen()) return;
 
+        /* голосование за режим: 1 — с демонами, 2 — с ботами */
+        if (voteOpen()) {
+            if (k === '1') { castVote('defense'); return; }
+            if (k === '2') { castVote('ffa'); return; }
+        }
+
         if (k === 'tab') {
             e.preventDefault();
             if (G.running) {
@@ -834,6 +847,37 @@ function initInput() {
             openPause();
         }
     });
+}
+
+/* ============================================================
+   СМЕНА РЕЖИМА (ротация): свет, небо, туман
+   ============================================================ */
+export function applyModeVisuals(mode) {
+    const defense = mode === 'defense';
+    const scene = G.scene;
+    if (scene) {
+        if (scene.background && scene.background.setHex) {
+            scene.background.setHex(defense ? 0x0a0508 : 0x9ec8ee);
+        }
+        if (scene.fog) {
+            scene.fog.color.setHex(defense ? 0x14060a : 0xbcd6ee);
+            scene.fog.density = defense ? 0.004 : 0.0011;
+        }
+    }
+    if (G.ambient) {
+        G.ambient.color.setHex(defense ? 0x664455 : 0xbcd4ee);
+        G.ambient.intensity = defense ? 0.72 : 0.9;
+    }
+    if (G.hemi) {
+        G.hemi.color.setHex(defense ? 0x442233 : 0xfff4e0);
+        G.hemi.groundColor.setHex(defense ? 0x14080c : 0x556677);
+        G.hemi.intensity = defense ? 0.65 : 1.0;
+    }
+    if (G.sun) {
+        G.sun.color.setHex(defense ? 0xdd9999 : 0xfff2d8);
+        G.sun.intensity = defense ? 0.7 : 1.6;
+    }
+    setNightMode(defense);
 }
 
 /* ============================================================
@@ -1052,30 +1096,37 @@ function tryMedkit(m) {
    ДВИЖЕНИЕ
    ============================================================ */
 function resolveAABBs(pos, radius) {
-    for (const c of collidersNear(pos.x, pos.z, radius + 1.0)) {
-        const closestX = clamp(pos.x, c.x - c.hw, c.x + c.hw);
-        const closestZ = clamp(pos.z, c.z - c.hd, c.z + c.hd);
-        const dx = pos.x - closestX;
-        const dz = pos.z - closestZ;
-        const d2 = dx * dx + dz * dz;
-        if (d2 < radius * radius) {
-            const d = Math.sqrt(d2);
-            if (d > 0.0001) {
-                const push = radius - d;
-                pos.x += (dx / d) * push;
-                pos.z += (dz / d) * push;
-            } else {
-                const dxL = Math.abs(pos.x - (c.x - c.hw));
-                const dxR = Math.abs((c.x + c.hw) - pos.x);
-                const dzL = Math.abs(pos.z - (c.z - c.hd));
-                const dzR = Math.abs((c.z + c.hd) - pos.z);
-                const mm = Math.min(dxL, dxR, dzL, dzR);
-                if (mm === dxL) pos.x = c.x - c.hw - radius;
-                else if (mm === dxR) pos.x = c.x + c.hw + radius;
-                else if (mm === dzL) pos.z = c.z - c.hd - radius;
-                else pos.z = c.z + c.hd + radius;
+    /* 4 прохода: в углах и на пересечениях укрытий (крестовины, парные ящики)
+       одного прохода мало — игрок клинился между двумя коллайдерами */
+    for (let pass = 0; pass < 4; pass++) {
+        let pushed = false;
+        for (const c of collidersNear(pos.x, pos.z, radius + 1.0)) {
+            const closestX = clamp(pos.x, c.x - c.hw, c.x + c.hw);
+            const closestZ = clamp(pos.z, c.z - c.hd, c.z + c.hd);
+            const dx = pos.x - closestX;
+            const dz = pos.z - closestZ;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < radius * radius) {
+                pushed = true;
+                const d = Math.sqrt(d2);
+                if (d > 0.0001) {
+                    const push = radius - d;
+                    pos.x += (dx / d) * push;
+                    pos.z += (dz / d) * push;
+                } else {
+                    const dxL = Math.abs(pos.x - (c.x - c.hw));
+                    const dxR = Math.abs((c.x + c.hw) - pos.x);
+                    const dzL = Math.abs(pos.z - (c.z - c.hd));
+                    const dzR = Math.abs((c.z + c.hd) - pos.z);
+                    const mm = Math.min(dxL, dxR, dzL, dzR);
+                    if (mm === dxL) pos.x = c.x - c.hw - radius;
+                    else if (mm === dxR) pos.x = c.x + c.hw + radius;
+                    else if (mm === dzL) pos.z = c.z - c.hd - radius;
+                    else pos.z = c.z + c.hd + radius;
+                }
             }
         }
+        if (!pushed) break;
     }
 }
 
@@ -1143,11 +1194,11 @@ function updateMovement(dt) {
 
     const targetVX = world.moveDir.x * speed;
     const targetVZ = world.moveDir.y * speed;
-    const accel = CFG.ACCEL * dt;
+    const accel = CFG.ACCEL * dt * (world.grounded ? 1 : 0.35);
     world.velocity.x += clamp(targetVX - world.velocity.x, -accel, accel);
     world.velocity.z += clamp(targetVZ - world.velocity.z, -accel, accel);
 
-    if (ilen < 0.001) {
+    if (ilen < 0.001 && world.grounded) {
         const f = CFG.FRICTION * dt;
         const vl = Math.hypot(world.velocity.x, world.velocity.z);
         if (vl > 0.01) {
@@ -1168,8 +1219,28 @@ function updateMovement(dt) {
 
     resolveAABBs(world.position, CFG.PLAYER_RADIUS);
 
+    /* прыжок и гравитация */
+    if (world.grounded && keys[' ']) {
+        world.velY = CFG.JUMP_V;
+        world.grounded = false;
+        AU.jump();
+    }
+    world.velY -= CFG.GRAVITY * dt;
+    world.position.y += world.velY * dt;
+    if (world.position.y <= 0) {
+        if (!world.grounded && world.velY < -3.5) {
+            world.shake = Math.min(0.3, world.shake + Math.min(0.12, -world.velY * 0.015));
+            AU.land(Math.min(0.22, -world.velY * 0.03));
+        }
+        world.position.y = 0;
+        world.velY = 0;
+        world.grounded = true;
+    } else {
+        world.grounded = false;
+    }
+
     const speedMag = Math.hypot(world.velocity.x, world.velocity.z);
-    if (speedMag > 2.5 && G.pointerLocked) {
+    if (speedMag > 2.5 && G.pointerLocked && world.grounded) {
         const phase = Math.floor(world.bobPhase / Math.PI);
         if (phase !== world.lastStepPhase) {
             world.lastStepPhase = phase;
@@ -1225,7 +1296,7 @@ export function updateCamera(dt) {
     const speedMag = Math.hypot(world.velocity.x, world.velocity.z);
     const bobSpeed = world.sprint ? 12 : (world.crouch ? 6 : 9);
     const bobAmp = Math.min(1, speedMag / CFG.MOVE_WALK) * (world.sprint ? 0.055 : 0.032);
-    if (speedMag > 0.5) {
+    if (speedMag > 0.5 && world.grounded) {
         world.bobPhase += dt * bobSpeed;
         world.bobAmount = bobAmp;
     } else {
@@ -1528,18 +1599,22 @@ function drawWeaponPreviews() {
 async function boot() {
     try {
         let mode = 'ffa';
+        let rotation = true;
         try {
             const r = await fetch('config.json', { cache: 'no-store' });
             if (r.ok) {
                 const cfg = await r.json();
                 if (cfg && cfg.mode) mode = String(cfg.mode).toLowerCase();
+                if (cfg && cfg.rotation && cfg.rotation.enabled === false) rotation = false;
             }
         } catch (e) {
             console.warn('[CONFIG] fetch failed, ffa по умолчанию:', e);
         }
-        world.mode = (mode === 'defense') ? 'defense' : 'ffa';
+        world.rotation = rotation;
+        /* при ротации карта всегда «Мегаполис» (FFA), режим меняется на лету */
+        world.mode = rotation ? 'ffa' : ((mode === 'defense') ? 'defense' : 'ffa');
         CFG.ARENA_HALF = world.mode === 'defense' ? 150 : 200;
-        console.log('[MODE]', world.mode, '| арена', CFG.ARENA_HALF * 2);
+        console.log('[MODE]', world.mode, '| ротация:', rotation, '| арена', CFG.ARENA_HALF * 2);
 
         loadSettings();
         try {

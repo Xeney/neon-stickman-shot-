@@ -29,6 +29,8 @@ BASE_DIR = Path(__file__).resolve().parent
 def load_config() -> dict:
     cfg = {
         "mode": "ffa",
+        "rotation": {"enabled": True, "ffa_duration": 1800, "ffa_kill_limit": 50,
+                     "vote_seconds": 15, "defeat_vote_seconds": 5},
         "ffa": {"max_bots": 16, "boss_hp": 3000, "boss_spawn_delay": 60, "boss_respawn_seconds": 900},
         "defense": {
             "break_seconds": 30, "first_break_seconds": 12, "points_per_kill": 10,
@@ -60,13 +62,26 @@ if MODE not in ("ffa", "defense"):
 DEF = CONFIG["defense"]
 FFA_CFG = CONFIG["ffa"]
 
+# --- ротация режимов: FFA-раунд -> голосование -> оборона -> голосование ---
+ROT = CONFIG.get("rotation", {}) if isinstance(CONFIG.get("rotation"), dict) else {}
+ROTATION = bool(ROT.get("enabled", True))
+FFA_DURATION = float(ROT.get("ffa_duration", 1800))
+FFA_KILL_LIMIT = int(ROT.get("ffa_kill_limit", 50))
+VOTE_SECONDS = float(ROT.get("vote_seconds", 15))
+DEFEAT_VOTE_SECONDS = float(ROT.get("defeat_vote_seconds", 5))
+if ROTATION:
+    MODE = "ffa"  # ротация всегда начинается с арены «каждый сам за себя»
+
+# карта: при ротации обе фазы идут на карте FFA «Мегаполис»
+MAP_MODE = "ffa" if ROTATION else MODE
+
 HTTP_PORT = 8080
 WS_PORT = 8001
 TICK_RATE = 30
 TICK_INTERVAL = 1.0 / TICK_RATE
 
-ARENA_HALF = 150.0 if MODE == "defense" else 200.0
-SPAWN_RANGE = 165.0 if MODE == "ffa" else 118.0
+ARENA_HALF = 150.0 if MAP_MODE == "defense" else 200.0
+SPAWN_RANGE = 165.0 if MAP_MODE == "ffa" else 118.0
 
 HEAD_OFFSET = 1.65
 HEAD_RADIUS = 0.25
@@ -143,7 +158,7 @@ player_hist: dict[str, deque] = {}
 #  КАРТА (должна совпадать с game.js)
 # ============================================================
 def build_wall_list():
-    if MODE == "defense":
+    if MAP_MODE == "defense":
         return build_wall_list_defense()
     return build_wall_list_ffa()
 
@@ -803,7 +818,7 @@ MEDKIT_SPOTS = [
     (155, 120), (-155, 120), (155, -120), (-155, -120),
     (120, 155), (-120, 155), (120, -155), (-120, -155),
     (186, 0), (0, 186), (-186, 0), (0, -186),
-] if MODE == "ffa" else [
+] if MAP_MODE == "ffa" else [
     (0, 14), (0, -14), (14, 0), (-14, 0),
     (72, 14), (-72, 14), (72, -14), (-72, -14),
     (14, 72), (-14, 72), (14, -72), (-14, -72),
@@ -1105,6 +1120,10 @@ async def apply_death(target_pid: str, killer_pid: str, headshot: bool, explosio
             points_gain = int(DEF["points_per_kill"])
             killer["points"] = int(killer.get("points", 0)) + points_gain
         await grant_streak_rewards(killer)
+        # лимит убийств завершает FFA-раунд
+        if (ROTATION and ROUND["phase"] == "ffa"
+                and int(killer.get("kills", 0)) >= FFA_KILL_LIMIT):
+            await end_ffa_round("kills")
 
     await broadcast({
         "type": "kill",
@@ -1549,6 +1568,141 @@ async def boss_defeated(target: dict, killer) -> None:
                          "next_in": int(BOSS_RESPAWN)})
 
 
+# ============================================================
+#  РОТАЦИЯ РЕЖИМОВ И ГОЛОСОВАНИЕ
+# ============================================================
+ROUND = {
+    "phase": "ffa" if (ROTATION and MODE == "ffa") else MODE,
+    "ends_at": (time.time() + FFA_DURATION) if ROTATION else 0.0,
+    "vote_ends_at": 0.0,
+    "votes": {},
+    "winner": None,
+}
+VOTE_OPTIONS = ("defense", "ffa")
+
+
+def vote_counts() -> dict:
+    c = {"ffa": 0, "defense": 0}
+    for v in ROUND["votes"].values():
+        if v in c:
+            c[v] += 1
+    return c
+
+
+def reset_player_for_round(p: dict) -> None:
+    """Полный сброс игрока к началу раунда: возрождение, статы, экономика."""
+    x, z, ry = make_spawn()
+    p["x"] = round(x, 3)
+    p["z"] = round(z, 3)
+    p["y"] = 0.0
+    p["ry"] = round(ry, 4)
+    p["rx"] = 0.0
+    p["is_dead"] = False
+    p["upgrades"] = {k: 0 for k in UPGRADES}
+    p["points"] = 0
+    p["max_hp"] = 100
+    p["hp"] = 100
+    p["kills"] = 0
+    p["deaths"] = 0
+    p["streak"] = 0
+    p["multi"] = 0
+    p["last_kill"] = 0.0
+    p["ammo"] = mag_eff(p)
+    p["reserve"] = mag_eff(p) * RESERVE_MAGS
+    p["reload_end"] = 0.0
+    p["reload_left"] = 0.0
+    p["grenades"] = dict(GRENADE_START)
+    p["nuke_ready"] = False
+    p.pop("respawn_at", None)
+
+
+async def start_vote(reason: str, seconds: float) -> None:
+    ROUND["phase"] = "defeat_vote" if reason == "defeat" else "vote"
+    ROUND["votes"] = {}
+    ROUND["vote_ends_at"] = time.time() + seconds
+    await broadcast({"type": "vote_start", "options": list(VOTE_OPTIONS),
+                     "seconds": int(seconds), "reason": reason})
+    print(f"[ROT] голосование ({reason}) на {int(seconds)}с")
+
+
+async def end_ffa_round(reason: str) -> None:
+    best = None
+    for p in players.values():
+        if best is None or int(p.get("kills", 0)) > int(best.get("kills", 0)):
+            best = p
+    ROUND["winner"] = best
+    await broadcast({"type": "round_end", "mode": "ffa", "reason": reason,
+                     "winner_name": best.get("name", "?") if best else "",
+                     "winner_kills": int(best.get("kills", 0)) if best else 0,
+                     "kill_limit": FFA_KILL_LIMIT})
+    await start_vote(reason, VOTE_SECONDS)
+
+
+async def resolve_vote() -> None:
+    counts = vote_counts()
+    if counts["ffa"] == counts["defense"]:
+        chosen = random.choice(VOTE_OPTIONS)  # ничья или нет голосов — рандом
+    else:
+        chosen = "ffa" if counts["ffa"] > counts["defense"] else "defense"
+    await broadcast({"type": "vote_end", "chosen": chosen, "counts": counts})
+    await apply_mode(chosen)
+
+
+async def apply_mode(mode: str) -> None:
+    """Переключение режима: сброс раунда, ботов и экономики."""
+    global MODE, boss_spawn_at
+    now = time.time()
+    MODE = mode
+    ROUND["phase"] = mode
+    ROUND["votes"] = {}
+    ROUND["winner"] = None
+    ROUND["vote_ends_at"] = 0.0
+    for bid in [pid for pid, p in players.items() if p.get("is_bot")]:
+        players.pop(bid, None)
+        bots.pop(bid, None)
+    grenades.clear()
+    acid_globs.clear()
+    smokes.clear()
+    if mode == "ffa":
+        ROUND["ends_at"] = now + FFA_DURATION
+        boss_spawn_at = now + BOSS_SPAWN_DELAY
+        wave_state.update({"wave": 0, "phase": "idle", "next_at": 0.0,
+                           "to_spawn": 0, "spawned": 0, "last_spawn": 0.0})
+        for pid in list(clients):
+            p = players.get(pid)
+            if p:
+                reset_player_for_round(p)
+        await broadcast({"type": "mode_start", "mode": "ffa",
+                         "duration": int(FFA_DURATION), "kill_limit": FFA_KILL_LIMIT})
+        print("[ROT] режим: АРЕНА (с ботами)")
+    else:
+        ROUND["ends_at"] = 0.0
+        wave_state.update({"wave": 0, "phase": "break",
+                           "next_at": now + float(DEF["first_break_seconds"]),
+                           "to_spawn": 0, "spawned": 0, "last_spawn": 0.0})
+        for pid in list(clients):
+            p = players.get(pid)
+            if p:
+                reset_player_for_round(p)
+        await broadcast({"type": "mode_start", "mode": "defense", "wave": 0,
+                         "break_seconds": int(DEF["first_break_seconds"])})
+        print("[ROT] режим: ОБОРОНА (с демонами)")
+
+
+async def rotation_tick(now: float) -> None:
+    if not ROTATION:
+        return
+    ph = ROUND["phase"]
+    if ph == "ffa":
+        if ROUND["ends_at"] and now >= ROUND["ends_at"]:
+            await end_ffa_round("time")
+    elif ph in ("vote", "defeat_vote"):
+        if clients and all(pid in ROUND["votes"] for pid in clients):
+            await resolve_vote()  # проголосовали все — не ждём таймер
+        elif now >= ROUND["vote_ends_at"]:
+            await resolve_vote()
+
+
 async def demon_explode(b: dict) -> None:
     """Смерть демона: урон по радиусу, как граната."""
     cfg = DEMON_TYPES.get(b.get("dt", "runner"), DEMON_TYPES["runner"])
@@ -1731,6 +1885,8 @@ async def wave_tick(now: float, dt: float) -> None:
             st["phase"] = "defeat"
             st["next_at"] = now + float(DEF["defeat_restart_seconds"])
             await broadcast({"type": "wave", "state": "defeat", "wave": st["wave"]})
+            if ROTATION:
+                await start_vote("defeat", DEFEAT_VOTE_SECONDS)
             return
 
         if (st["spawned"] < st["to_spawn"] and len(bots) < int(DEF["max_alive"])
@@ -1742,17 +1898,37 @@ async def wave_tick(now: float, dt: float) -> None:
         if st["spawned"] >= st["to_spawn"] and len(bots) == 0:
             st["phase"] = "break"
             st["next_at"] = now + float(DEF["break_seconds"])
+            revived = 0
             for pid in list(clients):
                 p = players.get(pid)
-                if p and not p.get("is_dead"):
+                if not p:
+                    continue
+                if p.get("is_dead"):
+                    # павшие воскресают после зачистки волны
+                    x, z, ry = make_spawn()
+                    p["x"] = round(x, 3)
+                    p["z"] = round(z, 3)
+                    p["y"] = 0.0
+                    p["ry"] = round(ry, 4)
+                    p["is_dead"] = False
+                    p["hp"] = max_hp_of(p)
+                    p["ammo"] = mag_eff(p)
+                    p["reserve"] = mag_eff(p) * RESERVE_MAGS
+                    p["reload_end"] = 0.0
+                    p["grenades"] = dict(GRENADE_START)
+                    p.pop("respawn_at", None)
+                    revived += 1
+                else:
                     p["hp"] = min(max_hp_of(p), int(p["hp"]) + int(DEF["heal_on_wave_clear"]))
                     p["grenades"] = dict(GRENADE_START)
                     p["reserve"] = mag_eff(p) * RESERVE_MAGS
             await broadcast({"type": "wave", "state": "clear", "wave": st["wave"],
-                             "next_in": int(DEF["break_seconds"])})
+                             "next_in": int(DEF["break_seconds"]), "revived": revived})
         return
 
     if st["phase"] == "defeat":
+        if ROTATION:
+            return  # судьбу режима решает голосование
         if now >= st["next_at"]:
             for bid in list(bots.keys()):
                 bots.pop(bid, None)
@@ -2189,6 +2365,7 @@ async def bots_tick():
             await wave_tick(now, dt)
             await update_bots_async(dt)
             await update_boss(dt, now)
+            await rotation_tick(now)
         except Exception as e:
             print("[BOT] err:", e)
 
@@ -2210,6 +2387,9 @@ async def broadcast_loop() -> None:
             hist_push(p, now)
 
             if p.get("is_dead") and now >= p.get("respawn_at", 0.0) and not p.get("is_bot"):
+                # в ротации павшие ждут зачистки волны (или голосования после поражения)
+                if ROTATION and MODE == "defense" and wave_state.get("phase") == "active":
+                    continue
                 x, z, ry = make_spawn()
                 p["x"] = round(x, 3)
                 p["y"] = 0.0
@@ -2249,6 +2429,12 @@ async def broadcast_loop() -> None:
                         "left": round(max(0.0, s["until"] - now), 1)}
                        for s in smokes.values()],
             "pickups": list(pickups.values()),
+            "phase": ROUND["phase"],
+            "round_left": int(max(0.0, ROUND["ends_at"] - now))
+                          if (ROTATION and ROUND["phase"] == "ffa") else 0,
+            "vote_ends_in": int(max(0.0, ROUND["vote_ends_at"] - now))
+                            if ROUND["phase"] in ("vote", "defeat_vote") else 0,
+            "vote_counts": vote_counts() if ROUND["phase"] in ("vote", "defeat_vote") else None,
             "time": now,
         })
         dead = []
@@ -2304,6 +2490,13 @@ async def ws_handler(ws) -> None:
             "hp": 100, "kills": 0, "is_dead": False,
             "weapon": weapon,
             "mode": MODE,
+            "rotation": ROTATION,
+            "phase": ROUND["phase"],
+            "round_left": int(max(0.0, ROUND["ends_at"] - time.time()))
+                          if (ROTATION and ROUND["phase"] == "ffa") else 0,
+            "vote": ({"options": list(VOTE_OPTIONS),
+                      "ends_in": int(max(0.0, ROUND["vote_ends_at"] - time.time()))}
+                     if ROUND["phase"] in ("vote", "defeat_vote") else None),
             "wave": wave_state.get("wave", 0),
             "wave_phase": wave_state.get("phase", "idle"),
             "break_seconds": int(DEF["break_seconds"]),
@@ -2420,6 +2613,14 @@ async def ws_handler(ws) -> None:
                     p["nuke_ready"] = False
                     await broadcast({"type": "nuke_denied", "name": p.get("name", "?")})
 
+            elif mt == "vote" and pid in players:
+                if ROTATION and ROUND["phase"] in ("vote", "defeat_vote"):
+                    vm = str(msg.get("mode", ""))[:16]
+                    if vm in VOTE_OPTIONS:
+                        ROUND["votes"][pid] = vm
+                        await broadcast({"type": "vote_update", "counts": vote_counts(),
+                                         "total": len(ROUND["votes"])})
+
             elif mt == "weapon" and pid in players:
                 w = str(msg.get("weapon", "rifle"))[:16]
                 if w in VALID_WEAPONS:
@@ -2501,9 +2702,12 @@ async def main() -> None:
     async with websockets.serve(ws_handler, "0.0.0.0", WS_PORT,
                                 ping_interval=20, max_size=2**20):
         print("=" * 64)
-        print(" NEON STICKMAN SHOT v2.0 — НОЧЬ ДЕМОНОВ")
+        print(" NEON STICKMAN SHOT v3 — ЖИВОЙ МИР")
         print("=" * 64)
         print(f"  Режим:         {MODE.upper()}")
+        if ROTATION:
+            print(f"  Ротация:       FFA {int(FFA_DURATION)//60} мин или {FFA_KILL_LIMIT} киллов "
+                  f"-> голосование ({int(VOTE_SECONDS)}с, поражение {int(DEFEAT_VOTE_SECONDS)}с)")
         print(f"  Локально:      http://localhost:{HTTP_PORT}")
         print(f"  По сети (LAN): http://{ip}:{HTTP_PORT}")
         print(f"  WebSocket:     ws://{ip}:{WS_PORT}")

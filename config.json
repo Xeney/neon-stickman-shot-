@@ -1,6 +1,14 @@
 {
     "mode": "ffa",
 
+    "rotation": {
+        "enabled": true,
+        "ffa_duration": 1800,
+        "ffa_kill_limit": 50,
+        "vote_seconds": 15,
+        "defeat_vote_seconds": 5
+    },
+
     "ffa": {
         "max_bots": 16,
         "boss_hp": 3000,

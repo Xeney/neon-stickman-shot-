@@ -235,6 +235,14 @@ export function updateHUD() {
     if (DOM.pingVal) DOM.pingVal.textContent = world.ping + ' ms';
     const vigAlpha = world.alive ? (hpPct < 60 ? (1 - hpPct / 60) * 0.85 : 0) : 0.55;
     damageVignette.style.opacity = vigAlpha.toFixed(2);
+    updateVoteUi();
+    const rt = $('round-timer');
+    if (rt) {
+        const left = world.roundLeft || 0;
+        rt.textContent = (world.roundPhase === 'ffa' && left > 0)
+            ? `· ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
+            : '';
+    }
 }
 
 /* ---------- TAB-табло ---------- */
@@ -601,4 +609,70 @@ function updateNukeTimer() {
     const el = $('nuke-timer');
     if (el) el.textContent = String(left);
     if (left <= 0) nukeDeny();
+}
+
+/* ---------- голосование за режим (ротация) ---------- */
+let voteWired = false;
+let voteDeadline = 0;
+let myVote = '';
+
+export function showVote(seconds = 15, reason = '') {
+    const el = $('vote');
+    if (!el) return;
+    voteDeadline = performance.now() / 1000 + seconds;
+    myVote = '';
+    const reasonEl = $('vote-reason');
+    if (reasonEl) {
+        reasonEl.textContent = reason === 'defeat'
+            ? 'ВСЕ БОЙЦЫ ПАЛИ — ВЫБЕРИ СЛЕДУЮЩИЙ РЕЖИМ'
+            : (reason === 'time' ? 'ВРЕМЯ РАУНДА ВЫШЛО — ВЫБЕРИ РЕЖИМ'
+               : (reason === 'kills' ? 'ЛИМИТ УБИЙСТВ — ВЫБЕРИ РЕЖИМ'
+                  : 'ВЫБЕРИ СЛЕДУЮЩИЙ РЕЖИМ'));
+    }
+    document.querySelectorAll('.vote-card').forEach(c => c.classList.remove('chosen'));
+    el.classList.remove('hidden');
+    if (!voteWired) {
+        voteWired = true;
+        document.querySelectorAll('.vote-card').forEach(c => {
+            c.addEventListener('click', () => castVote(c.dataset.mode));
+        });
+    }
+    AU.waveBreak();
+}
+
+export function castVote(mode) {
+    if (!voteOpen()) return;
+    if (myVote === mode) return;
+    myVote = mode;
+    sendMsg({ type: 'vote', mode });
+    document.querySelectorAll('.vote-card').forEach(c => {
+        c.classList.toggle('chosen', c.dataset.mode === mode);
+    });
+    AU.ui();
+}
+
+export function voteOpen() {
+    const el = $('vote');
+    return el ? !el.classList.contains('hidden') : false;
+}
+
+export function hideVote() {
+    const el = $('vote');
+    if (el) el.classList.add('hidden');
+    voteDeadline = 0;
+    myVote = '';
+}
+
+function updateVoteUi() {
+    if (!voteOpen()) return;
+    const left = Math.max(0, Math.ceil(voteDeadline - performance.now() / 1000));
+    const t = $('vote-timer');
+    if (t) t.textContent = String(left);
+    const c = world.voteCounts;
+    if (c) {
+        const d = $('vote-cnt-defense');
+        const f = $('vote-cnt-ffa');
+        if (d) d.textContent = String(c.defense || 0);
+        if (f) f.textContent = String(c.ffa || 0);
+    }
 }

@@ -1454,3 +1454,67 @@ i { font-style: normal; }
 }
 
 .cls-glyph.boss { color: #ff3344; text-shadow: 0 0 10px #ff3344; }
+
+/* ============================================================
+   v3.1: ГОЛОСОВАНИЕ ЗА РЕЖИМ + ТАЙМЕР РАУНДА
+   ============================================================ */
+#round-timer { color: #9fb4cc; font-size: 10px; letter-spacing: 1px; margin-left: 4px; }
+
+#vote {
+    position: fixed; inset: 0; z-index: 65;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 120px;
+    pointer-events: none;
+    background: linear-gradient(to top, rgba(4, 8, 16, 0.55), rgba(4, 8, 16, 0) 45%);
+}
+#vote.hidden { display: none; }
+.vote-box {
+    pointer-events: auto;
+    width: min(620px, 94vw); text-align: center;
+    padding: 18px 22px 16px;
+    background: linear-gradient(160deg, rgba(10, 16, 28, 0.95), rgba(6, 10, 18, 0.95));
+    border: 1px solid rgba(0, 229, 255, 0.35);
+    box-shadow: 0 0 44px rgba(0, 229, 255, 0.18), 0 18px 50px rgba(0, 0, 0, 0.6);
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+}
+.vote-title {
+    font-family: 'Changa One', Arial, sans-serif;
+    font-size: 24px; letter-spacing: 6px; color: #fff;
+    text-shadow: 0 0 20px rgba(0, 229, 255, 0.8);
+}
+.vote-reason { margin-top: 4px; font-size: 10.5px; letter-spacing: 1.5px; color: #9fb4cc; }
+.vote-cards { display: flex; gap: 12px; margin-top: 14px; }
+.vote-card {
+    flex: 1; position: relative; cursor: pointer; font-family: inherit;
+    padding: 12px 10px 10px; text-align: left;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(0, 229, 255, 0.22);
+    color: #d7e6f2;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.12s;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+.vote-card:hover { transform: translateY(-3px); border-color: var(--neon); box-shadow: 0 0 22px rgba(0, 229, 255, 0.25); }
+.vote-card b {
+    display: inline-block; font-family: 'Changa One', Arial, sans-serif;
+    font-size: 20px; color: #041018; background: var(--neon);
+    width: 26px; height: 26px; line-height: 26px; text-align: center; margin-right: 8px;
+}
+.vote-card span { font-size: 14px; font-weight: 900; letter-spacing: 2px; color: #fff; }
+.vote-card i { display: block; margin-top: 6px; font-style: normal; font-size: 9.5px; color: var(--text-dim); }
+.vote-card em {
+    position: absolute; top: 10px; right: 12px; font-style: normal;
+    font-size: 18px; font-weight: 900; color: var(--neon);
+    text-shadow: 0 0 12px rgba(0, 229, 255, 0.7);
+}
+.vote-card.chosen {
+    background: rgba(0, 229, 255, 0.12);
+    border-color: var(--neon);
+    box-shadow: 0 0 26px rgba(0, 229, 255, 0.4);
+}
+.vote-card[data-mode="defense"].chosen {
+    background: rgba(255, 85, 51, 0.14);
+    border-color: #ff5533;
+    box-shadow: 0 0 26px rgba(255, 85, 51, 0.45);
+}
+.vote-timer-wrap { margin-top: 12px; font-size: 10px; letter-spacing: 2px; color: #9fb4cc; }
+.vote-timer-wrap span { font-size: 15px; color: #fff; font-weight: 900; }

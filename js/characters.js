@@ -337,7 +337,7 @@ export function addRemotePlayer(id, p) {
     const mesh = isDemon
         ? createDemon(p.dt || 'runner')
         : createHuman(p.color, p.cls || 'hunter', p.weapon || 'rifle');
-    mesh.position.set(p.x, 0, p.z);
+    mesh.position.set(p.x, p.y || 0, p.z);
     mesh.rotation.y = p.ry || 0;
     let label = null;
     if (p.name) {
@@ -364,7 +364,7 @@ export function addRemotePlayer(id, p) {
         isDemon,
         dt: p.dt || '',
         weapon: p.weapon || 'rifle',
-        targetPos: new THREE.Vector3(p.x, 0, p.z),
+        targetPos: new THREE.Vector3(p.x, p.y || 0, p.z),
         targetRy: p.ry || 0, targetRx: p.rx || 0,
         hp: p.hp !== undefined ? p.hp : 100,
         maxHp: p.max_hp !== undefined ? p.max_hp : 100,

@@ -81,6 +81,7 @@
                 <span class="lc-label">ЛИДЕР</span>
                 <span id="leader-name">—</span>
                 <span id="leader-kills">0</span>
+                <span id="round-timer"></span>
             </div>
             <div id="wave-chip" class="hidden">
                 <span class="wc-label">ВОЛНА</span>
@@ -332,6 +333,7 @@
                     <div class="controls-grid">
                         <div><b>WASD</b><span>движение</span></div>
                         <div><b>SHIFT</b><span>бег</span></div>
+                        <div><b>ПРОБЕЛ</b><span>прыжок</span></div>
                         <div><b>CTRL</b><span>присесть</span></div>
                         <div><b>ПКМ</b><span>прицел</span></div>
                         <div><b>R</b><span>перезарядка</span></div>
@@ -468,6 +470,29 @@
             </div>
             <div class="set-hint">Режим 3 — сбалансированный. Если игра тормозит — поставь 1 и выключи эффекты.</div>
             <button id="set-close" class="btn-neon">ГОТОВО</button>
+        </div>
+    </div>
+
+    <!-- ===== ГОЛОСОВАНИЕ ЗА РЕЖИМ ===== -->
+    <div id="vote" class="hidden">
+        <div class="vote-box">
+            <div class="vote-title">ГОЛОСОВАНИЕ</div>
+            <div class="vote-reason" id="vote-reason">ВЫБЕРИ СЛЕДУЮЩИЙ РЕЖИМ</div>
+            <div class="vote-cards">
+                <button class="vote-card" data-mode="defense" id="vote-defense">
+                    <b>1</b>
+                    <span>С ДЕМОНАМИ</span>
+                    <i>оборона: волны, прокачка, ночь</i>
+                    <em id="vote-cnt-defense">0</em>
+                </button>
+                <button class="vote-card" data-mode="ffa" id="vote-ffa">
+                    <b>2</b>
+                    <span>С БОТАМИ</span>
+                    <i>арена: каждый сам за себя</i>
+                    <em id="vote-cnt-ffa">0</em>
+                </button>
+            </div>
+            <div class="vote-timer-wrap">РЕШЕНИЕ ЧЕРЕЗ <span id="vote-timer">15</span> С</div>
         </div>
     </div>
 

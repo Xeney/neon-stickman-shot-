@@ -9,8 +9,9 @@ import { buildWeaponModel } from './weapons.js';
 import { updatePlayersList, renderScoreboard, showHitMarker, showDamageIndicator,
          showBanner, updateGrenadeHud, flashChip, buildAmmoPips, buildShopPips,
          updateShopUI, updateWaveHud, hideDefeatOverlay, showDefeatOverlay,
-         showPointsPopup, addKillFeed, toggleShop, showNukeModal, hideNukeModal } from './hud.js';
-import { startReload, updateCamera } from '../game.js';
+         showPointsPopup, addKillFeed, toggleShop, showNukeModal, hideNukeModal,
+         showVote, hideVote, voteOpen } from './hud.js';
+import { startReload, updateCamera, applyModeVisuals } from '../game.js';
 
 /* ============================================================
    СЕТЬ: подключение, обработчики сервера, отправка состояния
@@ -84,6 +85,11 @@ export function connect(name) {
             case 'boss_down':     handleBossDown(msg); break;
             case 'nuke':          handleNuke(msg); break;
             case 'nuke_denied':   handleNukeDenied(msg); break;
+            case 'round_end':     handleRoundEnd(msg); break;
+            case 'vote_start':    handleVoteStart(msg); break;
+            case 'vote_update':   handleVoteUpdate(msg); break;
+            case 'vote_end':      handleVoteEnd(msg); break;
+            case 'mode_start':    handleModeStart(msg); break;
             case 'no_ammo':
                 AU.dry(0);
                 if (world.reserve > 0) startReload();
@@ -167,9 +173,9 @@ export function sendState() {
         type: 'state',
         x: sx,
         z: sz,
+        y: Number(world.position.y.toFixed(3)),
         ry: Number(world.yaw.toFixed(4)),
         rx: Number(world.pitch.toFixed(4)),
-        y: 0,
     }));
 }
 
@@ -434,7 +440,11 @@ function handleWaveEvent(msg) {
     } else if (msg.state === 'clear') {
         world.wavePhase = 'break';
         world.breakUntil = performance.now() / 1000 + (msg.next_in || 30);
-        showBanner('ВОЛНА ЗАЧИЩЕНА', `ПЕРЕРЫВ ${msg.next_in} СЕК · [B] МАГАЗИН`, '#34d97b');
+        if (msg.revived > 0) {
+            showBanner('ВОЛНА ЗАЧИЩЕНА', `ВОЗРОЖДЕНИЕ: ${msg.revived} · ПЕРЕРЫВ ${msg.next_in} СЕК`, '#34d97b');
+        } else {
+            showBanner('ВОЛНА ЗАЧИЩЕНА', `ПЕРЕРЫВ ${msg.next_in} СЕК · [B] МАГАЗИН`, '#34d97b');
+        }
         AU.waveClear();
     } else if (msg.state === 'defeat') {
         world.wavePhase = 'defeat';
@@ -504,6 +514,59 @@ function handleNukeDenied(msg) {
 }
 
 /* ============================================================
+   РОТАЦИЯ: конец раунда, голосование, смена режима
+   ============================================================ */
+function handleRoundEnd(msg) {
+    const why = msg.reason === 'kills' ? `ЛИМИТ ${msg.kill_limit} УБИЙСТВ` : 'ВРЕМЯ ВЫШЛО';
+    showBanner('РАУНД ЗАВЕРШЁН', `${msg.winner_name || '—'} · ${msg.winner_kills || 0} УБ · ${why}`, '#ffcc00');
+    AU.streakSnd();
+}
+
+function handleVoteStart(msg) {
+    showVote(msg.seconds || 15, msg.reason || '');
+}
+
+function handleVoteUpdate(msg) {
+    world.voteCounts = msg.counts || null;
+}
+
+function handleVoteEnd(msg) {
+    hideVote();
+    const name = msg.chosen === 'defense' ? 'С ДЕМОНАМИ' : 'С БОТАМИ';
+    showBanner('ГОЛОСОВАНИЕ', `ВЫБРАНО: ${name}`, msg.chosen === 'defense' ? '#ff5533' : '#00e5ff');
+}
+
+function handleModeStart(msg) {
+    hideVote();
+    hideDefeatOverlay();
+    world.mode = msg.mode === 'defense' ? 'defense' : 'ffa';
+    world.roundPhase = world.mode;
+    applyModeVisuals(world.mode);
+    if (world.mode === 'defense') {
+        AU.ambientStart();
+        Music.volume = 0.16;
+        world.wave = msg.wave || 0;
+        world.wavePhase = 'break';
+        world.breakUntil = performance.now() / 1000 + (msg.break_seconds || 12);
+        if (world.shopOpen) toggleShop(false);
+        showBanner('РЕЖИМ: ОБОРОНА', `ДЕМОНЫ ЧЕРЕЗ ${msg.break_seconds || 12} СЕК · [B] МАГАЗИН`, '#ff5533');
+    } else {
+        AU.ambientStop();
+        Music.volume = 0.26;
+        world.wavePhase = 'idle';
+        if (world.shopOpen) toggleShop(false);
+        showBanner('РЕЖИМ: АРЕНА', `${msg.kill_limit || 50} УБИЙСТВ ИЛИ ${Math.round((msg.duration || 1800) / 60)} МИН`, '#00e5ff');
+    }
+    const mmLabel = document.querySelector('.mm-label');
+    if (mmLabel) {
+        mmLabel.textContent = world.mode === 'defense'
+            ? 'МЕГАПОЛИС · НОЧЬ · 400×400'
+            : 'НЕОН-АРЕНА · 400×400';
+    }
+    updateWaveHud();
+}
+
+/* ============================================================
    INIT / STATE
    ============================================================ */
 function handleInit(msg) {
@@ -520,6 +583,8 @@ function handleInit(msg) {
         world.reloadLeft = 0; world.reloadTotal = 0;
         world.position.set(msg.x, 0, msg.z);
         world.velocity.set(0, 0, 0);
+        world.velY = 0;
+        world.grounded = true;
         world.yaw = msg.ry || 0;
         world.pitch = 0;
         world.alive = true;
@@ -547,6 +612,9 @@ function handleInit(msg) {
         world.wave = msg.wave || 0;
         world.wavePhase = msg.wave_phase || 'idle';
         world.breakUntil = performance.now() / 1000 + (msg.break_seconds || 30);
+        world.rotation = !!msg.rotation;
+        world.roundPhase = msg.phase || world.mode;
+        world.roundLeft = msg.round_left || 0;
         buildAmmoPips();
         buildShopPips();
         updateShopUI();
@@ -558,6 +626,10 @@ function handleInit(msg) {
         } else {
             AU.ambientStop();
             Music.volume = 0.26;
+        }
+        applyModeVisuals(world.mode);
+        if (msg.vote && msg.vote.ends_in > 0) {
+            showVote(msg.vote.ends_in, 'late');
         }
         const mmLabel = document.querySelector('.mm-label');
         if (mmLabel) {
@@ -675,6 +747,14 @@ function handleInit(msg) {
 function handleState(msg) {
     const players = msg.players || {};
     world.lastState = players;
+    world.roundPhase = msg.phase || world.roundPhase;
+    world.roundLeft = msg.round_left || 0;
+    if (msg.vote_ends_in > 0) {
+        world.voteCounts = msg.vote_counts || null;
+        if (!voteOpen()) showVote(msg.vote_ends_in, 'server');
+    } else {
+        world.voteCounts = null;
+    }
     const me = players[world.myId];
 
     if (me) {
@@ -739,8 +819,10 @@ function handleState(msg) {
             world.alive = true;
             world.hp = newHp;
             world.hpLag = newHp;
-            world.position.set(me.x, 0, me.z);
+            world.position.set(me.x, me.y || 0, me.z);
             world.velocity.set(0, 0, 0);
+            world.velY = 0;
+            world.grounded = true;
             world.yaw = me.ry || 0;
             world.pitch = 0;
             world.reconcile = null;
@@ -773,13 +855,13 @@ function handleState(msg) {
         } else if (!newIsDead && !r.alive) {
             r.alive = true; r.is_dead = false;
             r.mesh.visible = true;
-            r.mesh.position.set(p.x, 0, p.z);
+            r.mesh.position.set(p.x, p.y || 0, p.z);
         }
         r.hp = p.hp !== undefined ? p.hp : 100;
         r.kills = p.kills || 0;
         r.deaths = p.deaths || 0;
         r.streak = p.streak || 0;
-        r.targetPos.set(p.x, 0, p.z);
+        r.targetPos.set(p.x, p.y || 0, p.z);
         r.targetRy = p.ry || 0;
         r.targetRx = p.rx || 0;
         r.weapon = p.weapon || 'rifle';

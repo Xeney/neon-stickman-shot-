@@ -1,13 +1,20 @@
 import { THREE, G } from './core.js';
 
 /* ============================================================
-   НЕБО v2.1: купол, облака, птицы/мыши, дирижабль
+   НЕБО v3: день и ночь (переключение на лету), облака,
+   птицы (день) / мыши (ночь), дирижабль
    ============================================================ */
 
-let skyMesh = null;
+let daySky = null;
+let nightSky = null;
 let clouds = [];
-let birdData = null;
+let dayBirdData = null;
+let batData = null;
 let blimp = null;
+let nightMode = false;
+let birdsEnabled = true;
+let blimpEnabled = true;
+
 const M4 = new THREE.Matrix4();
 const Q = new THREE.Quaternion();
 const E = new THREE.Euler();
@@ -35,8 +42,7 @@ function cloudTexture() {
     return t;
 }
 
-export function buildSky(dark = false) {
-    const scene = G.scene;
+function makeSkyMesh(dark) {
     const s = 1024;
     const c = document.createElement('canvas');
     c.width = c.height = s;
@@ -102,23 +108,39 @@ export function buildSky(dark = false) {
         }
     }
 
-    skyMesh = new THREE.Mesh(
+    return new THREE.Mesh(
         new THREE.SphereGeometry(2000, 32, 16),
         new THREE.MeshBasicMaterial({
             map: new THREE.CanvasTexture(c),
             side: THREE.BackSide, depthWrite: false, toneMapped: false,
         })
     );
-    scene.add(skyMesh);
+}
 
-    /* --- облака --- */
+function applySkyVis() {
+    if (daySky) daySky.visible = !nightMode;
+    if (nightSky) nightSky.visible = nightMode;
+    for (const cl of clouds) cl.visible = !nightMode;
+    if (blimp) blimp.visible = !nightMode && blimpEnabled;
+    if (dayBirdData) {
+        dayBirdData.wings.visible = !nightMode && birdsEnabled;
+        if (dayBirdData.bodies) dayBirdData.bodies.visible = !nightMode && birdsEnabled;
+    }
+    if (batData) batData.wings.visible = nightMode && birdsEnabled;
+}
+
+export function buildSky() {
+    const scene = G.scene;
+    daySky = makeSkyMesh(false);
+    nightSky = makeSkyMesh(true);
+    nightSky.visible = false;
+    scene.add(daySky, nightSky);
+
     const ctex = cloudTexture();
-    const cloudCount = 10;
-    for (let i = 0; i < cloudCount; i++) {
+    for (let i = 0; i < 10; i++) {
         const mat = new THREE.SpriteMaterial({
             map: ctex, transparent: true, depthWrite: false,
-            opacity: dark ? 0.4 : 0.85,
-            color: dark ? 0x4a2a2c : 0xffffff,
+            opacity: 0.85, color: 0xffffff,
         });
         const sp = new THREE.Sprite(mat);
         const ang = Math.random() * Math.PI * 2;
@@ -131,15 +153,24 @@ export function buildSky(dark = false) {
         scene.add(sp);
     }
 
-    if (!dark) {
-        buildBirds();
-        buildBlimp();
-    } else {
-        buildBats();
-    }
+    buildBirds();
+    buildBlimp();
+    buildBats();
+    applySkyVis();
 }
 
-/* --- птицы: стая по кругу, взмахи крыльев --- */
+export function setNightMode(on) {
+    nightMode = !!on;
+    applySkyVis();
+}
+
+export function setSkyVisibility(birdsOn, blimpOn) {
+    birdsEnabled = !!birdsOn;
+    blimpEnabled = !!blimpOn;
+    applySkyVis();
+}
+
+/* --- птицы: стая по кругу, взмахи крыльев (день) --- */
 function buildBirds() {
     const scene = G.scene;
     const count = 22;
@@ -166,11 +197,11 @@ function buildBirds() {
             s: 0.8 + Math.random() * 0.5,
         });
     }
-    birdData = { wings, bodies, list, count };
+    dayBirdData = { wings, bodies, list, count, bat: false };
     scene.add(wings, bodies);
 }
 
-/* --- мыши (оборона): мелкие, быстрые, хаотичные --- */
+/* --- мыши (ночь): мелкие, быстрые, хаотичные --- */
 function buildBats() {
     const scene = G.scene;
     const count = 16;
@@ -192,13 +223,13 @@ function buildBats() {
             s: 0.7 + Math.random() * 0.5,
         });
     }
-    birdData = { wings, bodies: null, list, count, bat: true };
+    batData = { wings, bodies: null, list, count, bat: true };
     scene.add(wings);
 }
 
-function updateFliers(dt, t) {
-    if (!birdData) return;
-    const { wings, bodies, list, count, bat } = birdData;
+function updateFliers(data, dt, t) {
+    if (!data) return;
+    const { wings, bodies, list, count, bat } = data;
     for (let i = 0; i < count; i++) {
         const b = list[i];
         b.a += b.w * dt;
@@ -229,7 +260,7 @@ function updateFliers(dt, t) {
     if (bodies) bodies.instanceMatrix.needsUpdate = true;
 }
 
-/* --- дирижабль над городом --- */
+/* --- дирижабль над городом (день) --- */
 function buildBlimp() {
     const scene = G.scene;
     blimp = new THREE.Group();
@@ -263,26 +294,20 @@ function buildBlimp() {
     blimp.userData.a = 0;
 }
 
-export function setSkyVisibility(birdsOn, blimpOn) {
-    if (birdData) {
-        birdData.wings.visible = !!birdsOn;
-        if (birdData.bodies) birdData.bodies.visible = !!birdsOn;
-    }
-    if (blimp) blimp.visible = !!blimpOn;
-}
-
 export function updateSky(dt) {
     const t = performance.now() * 0.001;
 
     for (const cl of clouds) {
+        if (!cl.visible) continue;
         cl.position.x += cl.userData.speed * dt * 6;
         if (cl.position.x > 1100) cl.position.x = -1100;
         if (cl.position.x < -1100) cl.position.x = 1100;
     }
 
-    updateFliers(dt, t);
+    if (dayBirdData && dayBirdData.wings.visible) updateFliers(dayBirdData, dt, t);
+    if (batData && batData.wings.visible) updateFliers(batData, dt, t);
 
-    if (blimp) {
+    if (blimp && blimp.visible) {
         blimp.userData.a += dt * 0.0075;
         const a = blimp.userData.a;
         const r = 265;
