@@ -29,7 +29,7 @@ BASE_DIR = Path(__file__).resolve().parent
 def load_config() -> dict:
     cfg = {
         "mode": "ffa",
-        "ffa": {"max_bots": 16},
+        "ffa": {"max_bots": 16, "boss_hp": 3000, "boss_spawn_delay": 60, "boss_respawn_seconds": 900},
         "defense": {
             "break_seconds": 30, "first_break_seconds": 12, "points_per_kill": 10,
             "wave_base": 6, "wave_growth": 3, "max_alive": 48, "spawn_interval": 1.4,
@@ -79,6 +79,13 @@ SHOOT_RANGE = 200.0
 RESPAWN_TIME = 3.0
 MAX_BOTS = int(FFA_CFG.get("max_bots", 16))
 
+# --- БОСС (только FFA): стоит в центре, за убийство — ядерная бомба ---
+BOSS_HP = int(FFA_CFG.get("boss_hp", 3000))
+BOSS_SPAWN_DELAY = float(FFA_CFG.get("boss_spawn_delay", 60))
+BOSS_RESPAWN = float(FFA_CFG.get("boss_respawn_seconds", 900))
+BOSS_POS = (0.0, 7.0)
+boss_spawn_at = time.time() + BOSS_SPAWN_DELAY
+
 GRID_CELL = 20.0
 RESERVE_MAGS = 3
 PICKUP_LIFE = 45.0
@@ -96,8 +103,9 @@ WEAPONS = {
     "lmg":      {"damage": 19, "cooldown": 0.100,"pellets": 1, "spread": 0.028, "auto": True,  "falloff": 0.30, "mag": 80, "reload": 3.4},
     "shotgun":  {"damage": 9,  "cooldown": 0.80, "pellets": 8, "spread": 0.075, "auto": False, "falloff": 0.85, "mag": 7,  "reload": 2.6},
     "sniper":   {"damage": 85, "cooldown": 1.30, "pellets": 1, "spread": 0.000, "auto": False, "falloff": 0.05, "mag": 8,  "reload": 2.8},
+    "boss_gun": {"damage": 22, "cooldown": 0.14, "pellets": 1, "spread": 0.02, "auto": True, "falloff": 0.20, "mag": 10 ** 9, "reload": 3.0},
 }
-VALID_WEAPONS = tuple(WEAPONS.keys())
+VALID_WEAPONS = tuple(k for k in WEAPONS if k != "boss_gun")
 BOT_WEAPONS = ("pistol", "revolver", "smg", "rifle", "burst", "dmr", "lmg", "shotgun", "sniper")
 
 GRENADE_FUSE = 2.0
@@ -888,7 +896,10 @@ def hist_at(pid: str, t: float):
 #  БОЙ
 # ============================================================
 def hitbox_of(p: dict):
-    """(head_off, head_r, body_off, body_r) — у демонов масштабируется по типу."""
+    """(head_off, head_r, body_off, body_r) — у демонов и босса масштабируется."""
+    if p.get("boss"):
+        s = 1.45
+        return (HEAD_OFFSET * s, HEAD_RADIUS * s * 1.15, BODY_OFFSET * s, BODY_RADIUS * s)
     if p.get("is_demon"):
         cfg = DEMON_TYPES.get(p.get("dt", "runner"), DEMON_TYPES["runner"])
         s = float(cfg.get("scale", 1.0))
@@ -1112,6 +1123,10 @@ async def apply_death(target_pid: str, killer_pid: str, headshot: bool, explosio
         "target_deaths": target["deaths"],
         "target_x": target["x"], "target_y": target["y"], "target_z": target["z"],
     })
+
+    # Босс повержен: награда убийце (ядерная бомба) + таймер респавна
+    if target.get("boss"):
+        await boss_defeated(target, killer)
 
     # Смерть демона = взрыв с уроном по радиусу (как граната)
     if is_demon:
@@ -1465,6 +1480,75 @@ def bot_respawn(b, now: float):
     b["respawn_at"] = 0.0
 
 
+# --- БОСС: неподвижный титан в центре карты, награда — ядерная бомба ---
+def new_boss():
+    return {
+        "id": "boss", "name": "ТИТАН-БОСС", "color": 0xFF1512, "weapon": "boss_gun",
+        "cls": "boss", "is_demon": False, "boss": True,
+        "x": BOSS_POS[0], "y": 0.0, "z": BOSS_POS[1], "ry": math.pi, "rx": 0.0,
+        "hp": BOSS_HP, "max_hp": BOSS_HP, "kills": 0, "deaths": 0, "is_dead": False, "is_bot": True,
+        "streak": 0, "multi": 0, "last_kill": 0.0,
+        "ammo": 10 ** 9, "reserve": 10 ** 9, "reload_end": 0.0, "last_shot": 0.0,
+        "grenades": {}, "last_grenade": 0.0, "respawn_at": 0.0,
+        "vx": 0.0, "vz": 0.0,
+    }
+
+
+async def update_boss(dt: float, now: float) -> None:
+    """Босс стоит в центре, не уходит; стреляет по игрокам в радиусе."""
+    if MODE != "ffa":
+        return
+    b = players.get("boss")
+    if b is None:
+        if now >= boss_spawn_at:
+            players["boss"] = new_boss()
+            await broadcast({"type": "boss_spawn"})
+            print("[BOSS] ТИТАН-БОСС появился в центре арены")
+        return
+    if b.get("is_dead"):
+        if now >= b.get("respawn_at", 1e18):
+            players["boss"] = new_boss()
+            await broadcast({"type": "boss_spawn"})
+            print("[BOSS] новый ТИТАН-БОСС")
+        return
+
+    best = None
+    best_d = 1e9
+    for pid, p in players.items():
+        if pid == "boss" or p.get("is_dead") or p.get("is_bot"):
+            continue
+        d = math.hypot(p["x"] - b["x"], p["z"] - b["z"])
+        if d < best_d and los_clear(b["x"], b["z"], p["x"], p["z"]):
+            best, best_d = p, d
+    if best and best_d < 85.0:
+        target_ry = math.atan2(-(best["x"] - b["x"]), -(best["z"] - b["z"]))
+        d_ang = (target_ry - b["ry"] + math.pi) % (2 * math.pi) - math.pi
+        b["ry"] += d_ang * min(1.0, dt * 2.5)
+        if abs(d_ang) < 0.3:
+            err = 0.04 + min(0.12, best_d / 400.0)
+            await process_shoot("boss", {
+                "ry": b["ry"] + random.uniform(-err, err),
+                "rx": random.uniform(-0.06, 0.06),
+            })
+
+
+async def boss_defeated(target: dict, killer) -> None:
+    """Босс убит: убийца получает ядерную бомбу, новый босс — через 15 минут."""
+    target["respawn_at"] = time.time() + BOSS_RESPAWN
+    target["next_boss_in"] = int(BOSS_RESPAWN)
+    if killer and not killer.get("is_bot") and killer.get("id") != target.get("id"):
+        killer["nuke_ready"] = True
+        await send_to(killer["id"], {"type": "boss_down", "killer": killer["id"],
+                                     "killer_name": killer.get("name", "?"),
+                                     "next_in": int(BOSS_RESPAWN)})
+        await broadcast({"type": "boss_defeated", "killer": killer["id"],
+                         "killer_name": killer.get("name", "?"),
+                         "next_in": int(BOSS_RESPAWN)})
+    else:
+        await broadcast({"type": "boss_defeated", "killer": "", "killer_name": "",
+                         "next_in": int(BOSS_RESPAWN)})
+
+
 async def demon_explode(b: dict) -> None:
     """Смерть демона: урон по радиусу, как граната."""
     cfg = DEMON_TYPES.get(b.get("dt", "runner"), DEMON_TYPES["runner"])
@@ -1794,6 +1878,8 @@ async def update_human_bots(dt: float, now: float):
         for pid, p in players.items():
             if pid == bid or p.get("is_dead"):
                 continue
+            if p.get("boss"):
+                continue
             d = math.hypot(p["x"] - b["x"], p["z"] - b["z"])
             if d > 92:
                 continue
@@ -2102,6 +2188,7 @@ async def bots_tick():
             await step_acid(dt)
             await wave_tick(now, dt)
             await update_bots_async(dt)
+            await update_boss(dt, now)
         except Exception as e:
             print("[BOT] err:", e)
 
@@ -2232,6 +2319,12 @@ async def ws_handler(ws) -> None:
         await ws.send(json.dumps(init_payload))
         print(f"[WS] + {name} ({pid}) [{weapon}] | В игре: {len(players)}")
 
+        # подсказка о боссе для вошедшего (если босс уже на карте)
+        if MODE == "ffa":
+            b = players.get("boss")
+            if b is not None and not b.get("is_dead"):
+                await send_to(pid, {"type": "boss_spawn"})
+
         last_state_t = time.time()
         async for raw in ws:
             try:
@@ -2308,6 +2401,24 @@ async def ws_handler(ws) -> None:
 
             elif mt == "grenade" and pid in players:
                 await process_grenade(pid, msg)
+
+            elif mt == "nuke_use" and pid in players:
+                p = players[pid]
+                if p.get("nuke_ready") and not p.get("is_dead"):
+                    p["nuke_ready"] = False
+                    victims = [qid for qid, q in players.items()
+                               if qid != pid and not q.get("is_dead") and not q.get("boss")]
+                    for qid in victims:
+                        await apply_death(qid, pid, False, True, "ЯДЕРКА")
+                    await broadcast({"type": "nuke", "by": pid, "name": p.get("name", "?"),
+                                     "x": 0.0, "z": 0.0, "victims": len(victims)})
+                    print(f"[NUKE] {p.get('name')} сбросил ядерку: {len(victims)} жертв")
+
+            elif mt == "nuke_deny" and pid in players:
+                p = players[pid]
+                if p.get("nuke_ready"):
+                    p["nuke_ready"] = False
+                    await broadcast({"type": "nuke_denied", "name": p.get("name", "?")})
 
             elif mt == "weapon" and pid in players:
                 w = str(msg.get("weapon", "rifle"))[:16]

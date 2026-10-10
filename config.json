@@ -2,7 +2,10 @@
     "mode": "ffa",
 
     "ffa": {
-        "max_bots": 16
+        "max_bots": 16,
+        "boss_hp": 3000,
+        "boss_spawn_delay": 60,
+        "boss_respawn_seconds": 900
     },
 
     "defense": {

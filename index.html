@@ -10,7 +10,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Changa+One&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
     </script>
 </head>
 <body>
@@ -259,6 +264,7 @@
     <!-- ===== МЕНЮ ===== -->
     <div id="menu">
         <button id="music-btn" title="Музыка (M)">♪</button>
+        <button id="settings-btn" title="Настройки графики и звука">⚙</button>
         <div class="menu-shell">
             <header class="menu-hero">
                 <div class="logo-row">
@@ -412,6 +418,69 @@
                     </div>
                 </div>
                 <button class="car-arrow" id="car-next" aria-label="Вперёд">›</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== ПАУЗА ===== -->
+    <div id="pause" class="overlay hidden">
+        <div class="set-shell pause-shell">
+            <h2 class="set-title">ПАУЗА</h2>
+            <div class="pause-btns">
+                <button id="pause-resume" class="btn-neon">ПРОДОЛЖИТЬ</button>
+                <button id="pause-settings" class="btn-ghost">НАСТРОЙКИ</button>
+                <button id="pause-menu" class="btn-ghost danger">ВЫЙТИ В МЕНЮ</button>
+            </div>
+            <p class="set-note">ESC — продолжить · В меню можно сменить ник, графику и звук, затем вернуться в бой</p>
+        </div>
+    </div>
+
+    <!-- ===== НАСТРОЙКИ ===== -->
+    <div id="settings-panel" class="overlay hidden">
+        <div class="set-shell">
+            <h2 class="set-title">НАСТРОЙКИ</h2>
+            <div class="set-presets">
+                <button class="set-preset" data-level="1"><b>1</b><span>МИНИМУМ</span><i>для самых слабых ПК</i></button>
+                <button class="set-preset" data-level="2"><b>2</b><span>НИЗКИЙ</span><i>без теней и bloom</i></button>
+                <button class="set-preset active" data-level="3"><b>3</b><span>СРЕДНИЙ</span><i>баланс (по умолчанию)</i></button>
+                <button class="set-preset" data-level="4"><b>4</b><span>ВЫСОКИЙ</span><i>тени 2048, 1.5x</i></button>
+                <button class="set-preset" data-level="5"><b>5</b><span>УЛЬТРА</span><i>текстуры оружия, максимум</i></button>
+            </div>
+            <div class="set-cols">
+                <div class="set-col">
+                    <h3>ГРАФИКА</h3>
+                    <label class="set-row"><span>Трава и цветы</span><input type="checkbox" id="set-grass"></label>
+                    <label class="set-row"><span>Декор карты</span><input type="checkbox" id="set-decor"></label>
+                    <label class="set-row"><span>Птицы и дирижабль</span><input type="checkbox" id="set-birds"></label>
+                    <label class="set-row"><span>Тени</span><input type="checkbox" id="set-shadows"></label>
+                    <label class="set-row"><span>Свечение (bloom)</span><input type="checkbox" id="set-bloom"></label>
+                    <label class="set-row"><span>Эффекты и частицы</span><input type="checkbox" id="set-effects"></label>
+                    <label class="set-row"><span>Текстуры оружия</span><input type="checkbox" id="set-textures"></label>
+                </div>
+                <div class="set-col">
+                    <h3>ЗВУК</h3>
+                    <label class="set-row"><span>Музыка</span><input type="range" id="set-music" min="0" max="100" step="1"></label>
+                    <label class="set-row"><span>Звуки боя</span><input type="range" id="set-sfx" min="0" max="100" step="1"></label>
+                    <h3>ПРОФИЛЬ</h3>
+                    <label class="set-row"><span>Ник</span><input type="text" id="set-nick" maxlength="16" autocomplete="off"></label>
+                    <p class="set-note">Ник применится при следующем подключении (кнопка «В БОЙ» в меню).</p>
+                </div>
+            </div>
+            <div class="set-hint">Режим 3 — сбалансированный. Если игра тормозит — поставь 1 и выключи эффекты.</div>
+            <button id="set-close" class="btn-neon">ГОТОВО</button>
+        </div>
+    </div>
+
+    <!-- ===== ЯДЕРНАЯ БОМБА ===== -->
+    <div id="nuke-modal" class="hidden">
+        <div class="nuke-box">
+            <div class="nuke-title">☢ ЯДЕРНАЯ БОМБА</div>
+            <div class="nuke-sub">Босс повержен! Сбросить бомбу и уничтожить <b>всех на карте</b>?<br>Все убийства засчитаются тебе.</div>
+            <div class="nuke-keys"><b>ПРОБЕЛ</b> — сбросить · <b>O</b> — отказаться</div>
+            <div class="nuke-timer-wrap">РЕШЕНИЕ ЧЕРЕЗ <span id="nuke-timer">20</span> С</div>
+            <div class="nuke-btns">
+                <button id="nuke-use">СБРОСИТЬ</button>
+                <button id="nuke-deny">ОТКАЗАТЬСЯ</button>
             </div>
         </div>
     </div>
